@@ -66,7 +66,7 @@ export default function Home() {
         setChatMessages(data.chat_history);
       }
     } catch (err: any) {
-      logger.error("Ingestion failed: " + err);
+      console.error("Ingestion failed: ", err);
       setError(err.message || 'An unexpected error occurred.');
     } finally {
       setIsLoading(false);

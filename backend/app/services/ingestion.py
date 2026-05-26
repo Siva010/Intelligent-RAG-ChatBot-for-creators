@@ -40,7 +40,7 @@ class YouTubeIngestor(BaseIngestor):
         logger.info(f"Scraping YouTube metadata for video: {video_id}")
         
         # 1. Fetch metadata using yt-dlp
-        ydl_opts = {
+        ydl_opts: Any = {
             'skip_download': True,
             'quiet': True,
             'no_warnings': True,
@@ -49,12 +49,16 @@ class YouTubeIngestor(BaseIngestor):
         
         try:
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                info = ydl.extract_info(url, download=False)
-                title = info.get('title', 'Unknown YouTube Video')
-                views = info.get('view_count', 0)
-                likes = info.get('like_count', 0)
-                comments = info.get('comment_count', 0)
-                duration = info.get('duration', 0)
+                info = ydl.extract_info(url, download=False) or {}
+                title = info.get('title') or 'Unknown YouTube Video'
+                raw_views = info.get('view_count')
+                views = raw_views if raw_views is not None else 0
+                raw_likes = info.get('like_count')
+                likes = raw_likes if raw_likes is not None else 0
+                raw_comments = info.get('comment_count')
+                comments = raw_comments if raw_comments is not None else 0
+                raw_duration = info.get('duration')
+                duration = raw_duration if raw_duration is not None else 0
         except Exception as e:
             logger.warning(f"yt-dlp extraction failed or was blocked: {e}. Falling back to default metadata.")
             title = f"YouTube Video ({video_id})"
@@ -77,7 +81,8 @@ class YouTubeIngestor(BaseIngestor):
         error_message = None
 
         try:
-            raw_transcript = YouTubeTranscriptApi.get_transcript(video_id, languages=['en', 'en-US'])
+            api: Any = YouTubeTranscriptApi
+            raw_transcript = api.get_transcript(video_id, languages=['en', 'en-US'])
             for entry in raw_transcript:
                 transcript_data.append({
                     "text": entry.get("text", ""),

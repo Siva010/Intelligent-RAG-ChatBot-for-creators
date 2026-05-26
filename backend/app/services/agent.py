@@ -161,7 +161,8 @@ def chat_assistant_node(state: AgentState) -> Dict[str, Any]:
     
     # Extract last user message
     user_msg = [m for m in messages if isinstance(m, HumanMessage)][-1]
-    query = user_msg.content
+    query_content = user_msg.content
+    query = query_content if isinstance(query_content, str) else str(query_content)
     
     # 1. Retrieve semantic segments from vector store based on query
     retrieved_context = retrieve_relevant_segments(query, state)
@@ -178,11 +179,15 @@ Cite these exact timestamps (e.g. [Video A @ 01:24]) when referencing them in yo
 """
     
     # Prepare LLM input messages
-    llm_messages = []
+    llm_messages: List[BaseMessage] = []
     
     # First message in history is the original system prompt
     # We prepend the context instruction to guide the model's generation
-    system_prompt = messages[0].content + context_instruction
+    original_content = messages[0].content
+    if isinstance(original_content, str):
+        system_prompt = original_content + context_instruction
+    else:
+        system_prompt = str(original_content) + context_instruction
     llm_messages.append(SystemMessage(content=system_prompt))
     
     # Add rest of chat history (skipping original system message)
@@ -242,7 +247,8 @@ Based on the retrieved transcript chunks:
 What specific segment or comparison would you like me to rewrite or analyze further?"""
 
 # Build LangGraph Workflow
-workflow = StateGraph(AgentState)
+state_type: Any = AgentState
+workflow = StateGraph(state_type)
 
 # Add Nodes
 workflow.add_node("format_context", format_context_node)

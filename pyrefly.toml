@@ -1,0 +1,3 @@
+python-interpreter-path = "backend/venv/Scripts/python.exe"
+search-path = ["backend"]
+ignore-missing-imports = ["yt_dlp", "youtube_transcript_api"]

@@ -1,0 +1,4 @@
+{
+  "python.locator": "js",
+  "python.defaultInterpreterPath": "backend/venv/Scripts/python.exe"
+}

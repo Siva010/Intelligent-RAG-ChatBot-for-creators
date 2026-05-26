@@ -1,7 +1,7 @@
 import logging
 import uuid
 import numpy as np
-from typing import List, Dict, Any, Tuple
+from typing import List, Dict, Any, Tuple, Optional
 from app.config import settings
 
 logger = logging.getLogger(__name__)
@@ -59,10 +59,10 @@ except ImportError:
 
 class VectorStoreManager:
     def __init__(self):
-        self.chroma_client = None
-        self.collection = None
-        self.simple_store = None
-        self.collection_name = "creatorjoy_replica_chunks"
+        self.chroma_client: Any = None
+        self.collection: Any = None
+        self.simple_store: Optional[SimpleVectorStore] = None
+        self.collection_name: str = "creatorjoy_replica_chunks"
 
         if CHROMA_AVAILABLE:
             try:
@@ -219,9 +219,11 @@ class VectorStoreManager:
                 )
             except Exception as e:
                 logger.error(f"ChromaDB add failed: {e}. Falling back to simple store.")
-                if not self.simple_store:
-                    self.simple_store = SimpleVectorStore()
-                self.simple_store.add_documents(texts, metadatas, ids)
+                store = self.simple_store
+                if not store:
+                    store = SimpleVectorStore()
+                    self.simple_store = store
+                store.add_documents(texts, metadatas, ids)
 
     def query_vector_store(self, query: str, video_ids: List[str], n_results: int = 4) -> List[Dict[str, Any]]:
         """
@@ -242,9 +244,10 @@ class VectorStoreManager:
                 )
             except Exception as e:
                 logger.error(f"ChromaDB query failed: {e}. Querying simple store.")
-                if not self.simple_store:
+                store = self.simple_store
+                if not store:
                     return []
-                raw_results = self.simple_store.query(query, n_results=10)
+                raw_results = store.query(query, n_results=10)
 
         # Parse and filter by video_ids
         if raw_results and "documents" in raw_results and raw_results["documents"]:

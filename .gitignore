@@ -16,3 +16,4 @@ frontend/build/
 .DS_Store
 Thumbs.db
 /chroma_db/
+backend/chroma_db/
