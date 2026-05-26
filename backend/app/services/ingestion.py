@@ -81,13 +81,28 @@ class YouTubeIngestor(BaseIngestor):
         error_message = None
 
         try:
-            api: Any = YouTubeTranscriptApi
-            raw_transcript = api.get_transcript(video_id, languages=['en', 'en-US'])
+            # Handle class-method vs instance-method differences across package versions
+            if hasattr(YouTubeTranscriptApi, 'get_transcript'):
+                get_t: Any = getattr(YouTubeTranscriptApi, 'get_transcript')
+                raw_transcript = get_t(video_id, languages=['en', 'en-US'])
+            else:
+                api_instance = YouTubeTranscriptApi()
+                raw_transcript = api_instance.fetch(video_id, languages=['en', 'en-US'])
+                
             for entry in raw_transcript:
+                if isinstance(entry, dict):
+                    text = entry.get("text", "")
+                    start = entry.get("start", 0.0)
+                    duration = entry.get("duration", 0.0)
+                else:
+                    text = getattr(entry, "text", "")
+                    start = getattr(entry, "start", 0.0)
+                    duration = getattr(entry, "duration", 0.0)
+                    
                 transcript_data.append({
-                    "text": entry.get("text", ""),
-                    "start": round(entry.get("start", 0.0), 2),
-                    "duration": round(entry.get("duration", 0.0), 2)
+                    "text": text or "",
+                    "start": round(start if start is not None else 0.0, 2),
+                    "duration": round(duration if duration is not None else 0.0, 2)
                 })
         except (TranscriptsDisabled, NoTranscriptFound, Exception) as e:
             logger.warning(f"Transcript fetching failed for {video_id}: {e}. Triggering Whisper/mock fallback.")
