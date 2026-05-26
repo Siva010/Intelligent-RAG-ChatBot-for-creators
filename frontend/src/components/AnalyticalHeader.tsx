@@ -9,7 +9,7 @@ export interface VideoMetrics {
 }
 
 export interface VideoData {
-  video_id: str;
+  video_id: string;
   platform: 'youtube' | 'tiktok' | 'instagram';
   title: string;
   metrics: VideoMetrics;
