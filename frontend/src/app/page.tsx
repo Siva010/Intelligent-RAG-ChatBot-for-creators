@@ -40,7 +40,7 @@ export default function Home() {
     setChatMessages([]);
 
     try {
-      const response = await fetch('http://localhost:8000/analyze', {
+      const response = await fetch('http://127.0.0.1:8000/analyze', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -90,7 +90,7 @@ export default function Home() {
 
     try {
       // Establish SSE connection for streaming the AI response
-      const response = await fetch('http://localhost:8000/chat/stream', {
+      const response = await fetch('http://127.0.0.1:8000/chat/stream', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
