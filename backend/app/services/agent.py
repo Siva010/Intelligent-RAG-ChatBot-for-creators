@@ -10,6 +10,13 @@ from app.services.vector_store import vector_store
 
 logger = logging.getLogger(__name__)
 
+def extract_text(content: Any) -> str:
+    if isinstance(content, str):
+        return content
+    elif isinstance(content, list):
+        return "".join(c.get("text", "") if isinstance(c, dict) else str(c) for c in content)
+    return str(content)
+
 # State definition
 class AgentState(TypedDict):
     messages: Annotated[Sequence[BaseMessage], add_messages]
@@ -78,7 +85,7 @@ def generate_hook_node(state: AgentState) -> Dict[str, Any]:
     if settings.google_api_key:
         try:
             from langchain_google_genai import ChatGoogleGenerativeAI
-            llm = ChatGoogleGenerativeAI(model="gemini-1.5-flash", google_api_key=settings.google_api_key, temperature=0.2)
+            llm = ChatGoogleGenerativeAI(model="gemini-flash-latest", google_api_key=settings.google_api_key, temperature=0.2)
             # Create a prompt for the hook analysis
             hook_prompt = f"""Perform a direct, comparative hook audit of Video A vs Video B based on their titles and first 15 seconds transcripts.
 Video A Hook: "{vector_store.isolate_hooks(video_a.get("transcript", []))}" (Engagement: {video_a.get("engagement_rate")}%)
@@ -94,7 +101,7 @@ Keep it under 250 words, formatted in clean Markdown.
                 SystemMessage(content=format_system_prompt(video_a, video_b)),
                 HumanMessage(content=hook_prompt)
             ])
-            analysis_text = response.content
+            analysis_text = extract_text(response.content)
         except Exception as e:
             logger.error(f"Error calling LLM for hook: {e}")
             analysis_text = generate_mock_hook_analysis(video_a, video_b)
@@ -176,6 +183,12 @@ Cite these exact timestamps (e.g. [Video A @ 01:24]) when referencing them in yo
 
 {retrieved_context}
 ---
+
+FORMATTING RULES FOR YOUR RESPONSE:
+1. **Use Rich Markdown**: Use bolding `**text**` for key terms and metrics.
+2. **Scannability**: Break down complex analysis into concise bullet points or numbered lists.
+3. **Pacing**: Keep your paragraphs short (1-3 sentences max).
+4. **Directness**: Directly answer the user's question without unnecessary filler or fluff.
 """
     
     # Prepare LLM input messages
@@ -197,7 +210,7 @@ Cite these exact timestamps (e.g. [Video A @ 01:24]) when referencing them in yo
     if settings.google_api_key:
         try:
             from langchain_google_genai import ChatGoogleGenerativeAI
-            llm = ChatGoogleGenerativeAI(model="gemini-1.5-flash", google_api_key=settings.google_api_key, temperature=0.3)
+            llm = ChatGoogleGenerativeAI(model="gemini-flash-latest", google_api_key=settings.google_api_key, temperature=0.3)
             # Invoke LLM
             response = llm.invoke(llm_messages)
             return {"messages": [response]}
@@ -256,11 +269,14 @@ workflow.add_node("generate_hook", generate_hook_node)
 workflow.add_node("chat_assistant", chat_assistant_node)
 
 # Add Edges
-workflow.add_edge(START, "format_context")
-workflow.add_edge("format_context", "generate_hook")
-workflow.add_edge("generate_hook", END) # The initial build completes here, waiting for chat inputs.
+def route_start(state: AgentState) -> str:
+    if state.get("hook_analysis"):
+        return "chat_assistant"
+    return "format_context"
 
-# For subsequent chat turns, we start directly at the chat_assistant node
+workflow.add_conditional_edges(START, route_start)
+workflow.add_edge("format_context", "generate_hook")
+workflow.add_edge("generate_hook", END) 
 workflow.add_edge("chat_assistant", END)
 
 # Compile Graph with MemorySaver checkpointer
@@ -289,7 +305,7 @@ def initialize_session(session_id: str, video_a: Dict[str, Any], video_b: Dict[s
     return {
         "hook_analysis": res.get("hook_analysis", ""),
         "messages": [
-            {"role": "user" if m.type == "human" else "assistant", "content": m.content}
+            {"role": "user" if m.type == "human" else "assistant", "content": extract_text(m.content)}
             for m in res.get("messages", [])
             if m.type in ("human", "ai")
         ]
@@ -306,24 +322,18 @@ def send_chat_message(session_id: str, message: str) -> Dict[str, Any]:
     if not state_info or not state_info.values:
         raise ValueError(f"Session {session_id} not initialized. Call initialize_session first.")
         
-    # Append the new user message to the state and execute the chat_assistant node
-    agent_graph.update_state(config, {"messages": [HumanMessage(content=message)]})
-    
-    # Trigger the chat node directly using the StateGraph router or node execution
-    # For LangGraph 0.0.26+ and simple setups, invoking the compiled graph with the configured thread_id
-    # will automatically resume from the last checkpoint, add the new user message, and execute any new nodes.
-    # Because we added a path for `chat_assistant -> END`, calling it will run the active nodes.
-    # Wait, let's execute the node manually or run the graph:
-    res = agent_graph.invoke(None, config=config)
+    # Append the new user message by simply invoking the graph
+    # Since it reached END previously, new input restarts at START with accumulated state.
+    res = agent_graph.invoke({"messages": [HumanMessage(content=message)]}, config=config)
     
     # Retrieve last message (which is the AI response)
     ai_messages = [m for m in res.get("messages", []) if m.type == "ai"]
-    last_reply = ai_messages[-1].content if ai_messages else "No reply generated."
+    last_reply = extract_text(ai_messages[-1].content) if ai_messages else "No reply generated."
     
     return {
         "reply": last_reply,
         "messages": [
-            {"role": "user" if m.type == "human" else "assistant", "content": m.content}
+            {"role": "user" if m.type == "human" else "assistant", "content": extract_text(m.content)}
             for m in res.get("messages", [])
             if m.type in ("human", "ai")
         ]
@@ -333,19 +343,20 @@ async def stream_chat_message_sse(session_id: str, message: str):
     """
     Asynchronous generator yielding chunked text for Server-Sent Events (SSE).
     """
-    # For simplicity of demo and fallback, we run the query, get the response,
-    # and yield it word by word to simulate SSE streaming. This gives a beautiful,
-    # real-time typing effect on the frontend!
-    res = send_chat_message(session_id, message)
-    reply = res["reply"]
-    
+    try:
+        res = send_chat_message(session_id, message)
+        reply = res["reply"]
+    except Exception as e:
+        logger.error(f"Error in send_chat_message: {e}")
+        yield dict(data=json.dumps({'chunk': f'**Error:** {str(e)} '}))
+        yield dict(data="[DONE]")
+        return
+        
     # Split reply into words to stream
     words = reply.split(" ")
-    accumulated = ""
     import asyncio
     for word in words:
-        accumulated += word + " "
         # Format as SSE data chunk
-        yield f"data: {json.dumps({'chunk': word + ' '})}\n\n"
+        yield dict(data=json.dumps({'chunk': word + ' '}))
         await asyncio.sleep(0.04) # Simulate network speed/streaming latency
-    yield "data: [DONE]\n\n"
+    yield dict(data="[DONE]")
