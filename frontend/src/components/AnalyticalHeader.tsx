@@ -10,11 +10,12 @@ export interface VideoMetrics {
 
 export interface VideoData {
   video_id: string;
-  platform: 'youtube' | 'tiktok' | 'instagram';
+  platform: string;
   title: string;
   metrics: VideoMetrics;
   engagement_rate: number;
   whisper_stubbed?: boolean;
+  is_estimated_views?: boolean;
 }
 
 interface AnalyticalHeaderProps {
@@ -43,9 +44,10 @@ export default function AnalyticalHeader({ videoA, videoB }: AnalyticalHeaderPro
   };
 
   const getMetricDiff = (valA: number, valB: number) => {
-    if (!valA || !valB) return null;
+    if (!valA || !valB || valA === valB) return null;
     const diff = valA - valB;
     const percent = ((diff) / valB) * 100;
+    if (Math.abs(percent) < 0.01) return null;
     return {
       diff,
       percent: percent.toFixed(1),
@@ -64,7 +66,7 @@ export default function AnalyticalHeader({ videoA, videoB }: AnalyticalHeaderPro
           </span>
           {data.whisper_stubbed && (
             <span className="px-2 py-0.5 text-[10px] font-medium bg-amber-500/20 text-amber-300 rounded border border-amber-500/30">
-              Whisper Fallback
+              {data.platform === 'youtube' ? 'Whisper Fallback' : 'Caption Fallback'}
             </span>
           )}
         </div>
@@ -79,12 +81,17 @@ export default function AnalyticalHeader({ videoA, videoB }: AnalyticalHeaderPro
               <Play className="w-3.5 h-3.5" />
               Views
             </div>
-            <div className="text-xl font-bold text-white">{formatNumber(metrics.views)}</div>
+            <div className="text-xl font-bold text-white">
+              {data.is_estimated_views ? '~' : ''}{formatNumber(metrics.views)}
+            </div>
+            {data.is_estimated_views && (
+              <div className="text-[9px] text-zinc-500 mt-0.5">estimated</div>
+            )}
             {otherData && (
               <div className="mt-1">
                 {(() => {
                   const diffInfo = getMetricDiff(metrics.views, otherData.metrics.views);
-                  if (!diffInfo) return null;
+                  if (!diffInfo) return <span className="text-[10px] text-zinc-600">—</span>;
                   return (
                     <span className={`text-[10px] font-bold ${diffInfo.isPositive ? 'text-emerald-400' : 'text-rose-400'}`}>
                       {diffInfo.isPositive ? '+' : ''}{diffInfo.percent}% vs other
@@ -106,7 +113,7 @@ export default function AnalyticalHeader({ videoA, videoB }: AnalyticalHeaderPro
               <div className="mt-1">
                 {(() => {
                   const diffInfo = getMetricDiff(metrics.likes, otherData.metrics.likes);
-                  if (!diffInfo) return null;
+                  if (!diffInfo) return <span className="text-[10px] text-zinc-600">—</span>;
                   return (
                     <span className={`text-[10px] font-bold ${diffInfo.isPositive ? 'text-emerald-400' : 'text-rose-400'}`}>
                       {diffInfo.isPositive ? '+' : ''}{diffInfo.percent}% vs other
@@ -128,7 +135,7 @@ export default function AnalyticalHeader({ videoA, videoB }: AnalyticalHeaderPro
               <div className="mt-1">
                 {(() => {
                   const diffInfo = getMetricDiff(metrics.comments, otherData.metrics.comments);
-                  if (!diffInfo) return null;
+                  if (!diffInfo) return <span className="text-[10px] text-zinc-600">—</span>;
                   return (
                     <span className={`text-[10px] font-bold ${diffInfo.isPositive ? 'text-emerald-400' : 'text-rose-400'}`}>
                       {diffInfo.isPositive ? '+' : ''}{diffInfo.percent}% vs other
@@ -150,6 +157,7 @@ export default function AnalyticalHeader({ videoA, videoB }: AnalyticalHeaderPro
               <div className="mt-1">
                 {(() => {
                   const diff = data.engagement_rate - otherData.engagement_rate;
+                  if (Math.abs(diff) < 0.01) return <span className="text-[10px] text-zinc-600">—</span>;
                   const isPositive = diff > 0;
                   return (
                     <span className={`text-[10px] font-bold ${isPositive ? 'text-emerald-400' : 'text-rose-400'}`}>

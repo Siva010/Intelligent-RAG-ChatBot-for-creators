@@ -94,7 +94,8 @@ async def analyze_videos(req: AnalyzeRequest):
             "title": data_a["title"],
             "metrics": data_a["metrics"],
             "engagement_rate": data_a["engagement_rate"],
-            "whisper_stubbed": data_a.get("whisper_stubbed", False)
+            "whisper_stubbed": data_a.get("whisper_stubbed", False),
+            "is_estimated_views": data_a.get("is_estimated_views", False),
         },
         "video_b": {
             "video_id": data_b["video_id"],
@@ -102,9 +103,11 @@ async def analyze_videos(req: AnalyzeRequest):
             "title": data_b["title"],
             "metrics": data_b["metrics"],
             "engagement_rate": data_b["engagement_rate"],
-            "whisper_stubbed": data_b.get("whisper_stubbed", False)
+            "whisper_stubbed": data_b.get("whisper_stubbed", False),
+            "is_estimated_views": data_b.get("is_estimated_views", False),
         },
         "hook_analysis": session_result["hook_analysis"],
+        "is_mock_analysis": session_result.get("is_mock_analysis", False),
         "chat_history": session_result["messages"]
     }
 

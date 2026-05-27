@@ -11,6 +11,7 @@ export default function Home() {
   const [sessionId, setSessionId] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [isMockAnalysis, setIsMockAnalysis] = useState(false);
   
   // Scraped metrics data
   const [videoA, setVideoA] = useState<VideoData | null>(null);
@@ -37,6 +38,7 @@ export default function Home() {
     setError(null);
     setVideoA(null);
     setVideoB(null);
+    setIsMockAnalysis(false);
     setChatMessages([]);
 
     try {
@@ -60,6 +62,7 @@ export default function Home() {
       const data = await response.json();
       setVideoA(data.video_a);
       setVideoB(data.video_b);
+      setIsMockAnalysis(data.is_mock_analysis || false);
       
       // Load initial chat messages from backend (which includes the hook audit)
       if (data.chat_history) {
@@ -172,7 +175,7 @@ export default function Home() {
             <h1 className="text-lg font-bold bg-gradient-to-r from-white via-zinc-200 to-zinc-400 bg-clip-text text-transparent">
               CreatorJoy <span className="text-xs px-2 py-0.5 ml-1.5 font-medium border border-indigo-500/30 rounded bg-indigo-500/10 text-indigo-400">Replica</span>
             </h1>
-            <p className="text-[10px] text-zinc-500 font-medium">Viral YouTube Script Doctor & Data Co-Pilot</p>
+            <p className="text-[10px] text-zinc-500 font-medium">Viral Social Script Doctor & Data Co-Pilot</p>
           </div>
         </div>
         <div className="flex items-center gap-4 text-xs font-semibold text-zinc-400">
@@ -191,7 +194,12 @@ export default function Home() {
           <div className="max-w-2xl mb-6">
             <h2 className="text-xl font-extrabold text-white mb-2 tracking-tight">Audit Social Video Performance</h2>
             <p className="text-sm text-zinc-400">
-              Input two video URLs below. Our scraping service extracts the raw transcripts and engagement rates, indexes the semantic segments, and loads the script doctor state machine.
+              Input two video URLs below. Supports YouTube, Instagram Reels, and TikTok. Our scraping service extracts the raw transcripts and engagement rates, indexes the semantic segments, and loads the script doctor state machine.
+            </p>
+            <p className="text-xs text-zinc-600 mt-2">
+              💡 <strong className="text-zinc-500">Instagram / TikTok tip:</strong> For real metrics, export your browser cookies to a file named{' '}
+              <code className="bg-zinc-800 px-1 py-0.5 rounded text-zinc-400">cookies.txt</code>{' '}
+              and place it in the <code className="bg-zinc-800 px-1 py-0.5 rounded text-zinc-400">backend/</code> directory.
             </p>
           </div>
 
@@ -203,7 +211,7 @@ export default function Home() {
                 <input
                   type="url"
                   required
-                  placeholder="https://www.youtube.com/watch?v=..."
+                  placeholder="https://www.youtube.com/... or https://www.instagram.com/reel/..."
                   value={urlA}
                   onChange={(e) => setUrlA(e.target.value)}
                   disabled={isLoading}
@@ -217,7 +225,7 @@ export default function Home() {
                 <input
                   type="url"
                   required
-                  placeholder="https://www.youtube.com/watch?v=..."
+                  placeholder="https://www.youtube.com/... or https://www.instagram.com/reel/..."
                   value={urlB}
                   onChange={(e) => setUrlB(e.target.value)}
                   disabled={isLoading}
@@ -256,6 +264,15 @@ export default function Home() {
         {/* Analytics Workspace Dashboard */}
         {(videoA || videoB || isLoading) && (
           <section className="space-y-8 animate-fade-in">
+            {/* Mock analysis banner */}
+            {isMockAnalysis && (
+              <div className="flex items-start gap-3 p-4 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-300 text-sm">
+                <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
+                <div>
+                  <strong>AI Fallback Mode Active</strong> — The Gemini API rate limit was reached (free tier: 20 req/day). The initial hook audit and chat responses are using an intelligent rule-based fallback instead of live AI. Wait ~1 minute and re-submit to get a real AI analysis.
+                </div>
+              </div>
+            )}
             {/* KPI metrics comparison */}
             <AnalyticalHeader videoA={videoA} videoB={videoB} />
 

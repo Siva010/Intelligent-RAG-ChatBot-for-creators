@@ -23,6 +23,7 @@ class AgentState(TypedDict):
     video_a: Dict[str, Any]
     video_b: Dict[str, Any]
     hook_analysis: str
+    is_mock_analysis: bool
     session_id: str
 
 def format_system_prompt(video_a: Dict[str, Any], video_b: Dict[str, Any]) -> str:
@@ -76,40 +77,63 @@ def format_context_node(state: AgentState) -> Dict[str, Any]:
 
 # Node 2: Generate Hook Analysis
 def generate_hook_node(state: AgentState) -> Dict[str, Any]:
+    import asyncio, time, re as _re
     logger.info("LangGraph: generating initial hook analysis")
-    
+
     video_a = state["video_a"]
     video_b = state["video_b"]
-    
-    # If Google API key exists, generate a professional hook comparison. Otherwise use mock comparison.
+    is_mock = True
+    analysis_text = ""
+
     if settings.google_api_key:
-        try:
-            from langchain_google_genai import ChatGoogleGenerativeAI
-            llm = ChatGoogleGenerativeAI(model="gemini-flash-latest", google_api_key=settings.google_api_key, temperature=0.2)
-            # Create a prompt for the hook analysis
-            hook_prompt = f"""Perform a direct, comparative hook audit of Video A vs Video B based on their titles and first 15 seconds transcripts.
-Video A Hook: "{vector_store.isolate_hooks(video_a.get("transcript", []))}" (Engagement: {video_a.get("engagement_rate")}%)
-Video B Hook: "{vector_store.isolate_hooks(video_b.get("transcript", []))}" (Engagement: {video_b.get("engagement_rate")}%)
+        hook_prompt = f"""Perform a direct, comparative hook audit of Video A vs Video B based on their titles and first 15 seconds transcripts.
+Video A Hook: "{vector_store.isolate_hooks(video_a.get('transcript', []))}" (Engagement: {video_a.get('engagement_rate')}%)
+Video B Hook: "{vector_store.isolate_hooks(video_b.get('transcript', []))}" (Engagement: {video_b.get('engagement_rate')}%)
 
 Provide a concise side-by-side breakdown detailing:
 1. **Psychological Curiosity Loop**: Which video opened a more compelling question?
 2. **Pacing & Word Velocity**: Compare opening words.
 3. **Winner Verdict**: Who won the hook phase and why?
-Keep it under 250 words, formatted in clean Markdown.
-"""
-            response = llm.invoke([
-                SystemMessage(content=format_system_prompt(video_a, video_b)),
-                HumanMessage(content=hook_prompt)
-            ])
-            analysis_text = extract_text(response.content)
-        except Exception as e:
-            logger.error(f"Error calling LLM for hook: {e}")
-            analysis_text = generate_mock_hook_analysis(video_a, video_b)
-    else:
+Keep it under 250 words, formatted in clean Markdown."""
+
+        max_attempts = 2
+        for attempt in range(max_attempts):
+            try:
+                from langchain_google_genai import ChatGoogleGenerativeAI
+                llm = ChatGoogleGenerativeAI(
+                    model="gemini-2.0-flash",
+                    google_api_key=settings.google_api_key,
+                    temperature=0.2
+                )
+                response = llm.invoke([
+                    SystemMessage(content=format_system_prompt(video_a, video_b)),
+                    HumanMessage(content=hook_prompt)
+                ])
+                analysis_text = extract_text(response.content)
+                is_mock = False
+                break
+            except Exception as e:
+                err_str = str(e)
+                logger.warning(f"LLM attempt {attempt + 1} failed: {e}")
+                # Parse retry delay from 429 error message
+                if "429" in err_str and attempt < max_attempts - 1:
+                    delay_match = _re.search(r"retryDelay.*?'(\d+)s'", err_str)
+                    wait = int(delay_match.group(1)) if delay_match else 55
+                    wait = min(wait, 65)  # cap at 65s
+                    logger.info(f"Rate limited — waiting {wait}s before retry...")
+                    time.sleep(wait)
+                else:
+                    # Non-429 error or last attempt — use mock
+                    logger.error(f"Falling back to mock hook analysis. Reason: {e}")
+                    break
+
+    if not analysis_text:
         analysis_text = generate_mock_hook_analysis(video_a, video_b)
-        
+        is_mock = True
+
     return {
         "hook_analysis": analysis_text,
+        "is_mock_analysis": is_mock,
         "messages": [AIMessage(content=f"### Initial Hook Audit & Diagnostics\n\n{analysis_text}")]
     }
 
@@ -208,16 +232,32 @@ FORMATTING RULES FOR YOUR RESPONSE:
         llm_messages.append(m)
         
     if settings.google_api_key:
-        try:
-            from langchain_google_genai import ChatGoogleGenerativeAI
-            llm = ChatGoogleGenerativeAI(model="gemini-flash-latest", google_api_key=settings.google_api_key, temperature=0.3)
-            # Invoke LLM
-            response = llm.invoke(llm_messages)
-            return {"messages": [response]}
-        except Exception as e:
-            logger.error(f"Error calling Google Gemini: {e}")
-            
-    # Mock Chat assistant response if offline or OpenAI failed
+        import re as _re, time
+        max_attempts = 2
+        for attempt in range(max_attempts):
+            try:
+                from langchain_google_genai import ChatGoogleGenerativeAI
+                llm = ChatGoogleGenerativeAI(
+                    model="gemini-2.0-flash",
+                    google_api_key=settings.google_api_key,
+                    temperature=0.3
+                )
+                response = llm.invoke(llm_messages)
+                return {"messages": [response]}
+            except Exception as e:
+                err_str = str(e)
+                logger.warning(f"Chat LLM attempt {attempt + 1} failed: {e}")
+                if "429" in err_str and attempt < max_attempts - 1:
+                    delay_match = _re.search(r"retryDelay.*?'(\d+)s'", err_str)
+                    wait = int(delay_match.group(1)) if delay_match else 55
+                    wait = min(wait, 65)
+                    logger.info(f"Rate limited — waiting {wait}s then retrying...")
+                    time.sleep(wait)
+                else:
+                    logger.error(f"LLM chat failed, using mock: {e}")
+                    break
+
+    # Graceful mock fallback
     mock_reply = generate_mock_chat_response(query, state, retrieved_context)
     return {"messages": [AIMessage(content=mock_reply)]}
 
@@ -294,6 +334,7 @@ def initialize_session(session_id: str, video_a: Dict[str, Any], video_b: Dict[s
         "video_a": video_a,
         "video_b": video_b,
         "hook_analysis": "",
+        "is_mock_analysis": False,
         "session_id": session_id
     }
     
@@ -304,6 +345,7 @@ def initialize_session(session_id: str, video_a: Dict[str, Any], video_b: Dict[s
     # Retrieve messages and latest response
     return {
         "hook_analysis": res.get("hook_analysis", ""),
+        "is_mock_analysis": res.get("is_mock_analysis", False),
         "messages": [
             {"role": "user" if m.type == "human" else "assistant", "content": extract_text(m.content)}
             for m in res.get("messages", [])
