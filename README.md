@@ -24,9 +24,10 @@ The application is decoupled into a fast, async **FastAPI** backend and a premiu
  - Whisper fallback stub            - Vector database router tool
                                           │
                                           ▼
-                             [Vector DB: Chroma / NumPy Fallback]
+                              [Vector DB: Chroma / NumPy Fallback]
                               - Hook isolation (first 15s)
                               - Semantic chunking (400-600 tokens)
+                              - Server-Sent Events (SSE) Streaming
 ```
 
 ---
@@ -73,9 +74,9 @@ The application is decoupled into a fast, async **FastAPI** backend and a premiu
 To scale this application from a local demo to supporting 10,000+ creators daily with elite performance and cost efficiency, we propose the following production roadmap:
 
 ### 1. Cost & Context Window Optimization
-- **Caching Tier**: Transition from in-memory dictionary to a dedicated **Redis** cluster with a 24-hour TTL keyed by hashed video URLs. Ingested data is served instantly, dropping OpenAI/Scraper bills to zero for repeat audits.
-- **Model Tiering**: Route simple semantic retrieval queries and hook comparison requests to fast, cost-efficient models (e.g. `gpt-4o-mini`). Escalate to larger models (e.g. `claude-3-5-sonnet`) only when complex script rewriting or psychological pacing improvements are requested.
-- **Strict Vector Routing**: Instead of sending the full transcript of two 20-minute videos (30k+ tokens) into the context window, the LangGraph setup uses a router tool to fetch only the top 3 semantic transcript blocks (approx 1,500 tokens) alongside a normalized metrics JSON.
+- **Caching Tier**: Transition from in-memory dictionary to a dedicated **Redis** cluster with a 24-hour TTL keyed by hashed video URLs. Ingested data is served instantly, dropping API/Scraper bills to zero for repeat audits.
+- **Model Tiering**: Route simple semantic retrieval queries and hook comparison requests to fast, cost-efficient models (e.g., `gemini-flash-latest`). Escalate to larger models (e.g., `gemini-1.5-pro` or `gemini-2.0-pro`) only when complex script rewriting or psychological pacing improvements are requested.
+- **Strict Vector Routing & Chat State**: Instead of sending the full transcript of two 20-minute videos (30k+ tokens) into the context window, the LangGraph setup uses a router tool to fetch only the top 3 semantic transcript blocks (approx 1,500 tokens) alongside a normalized metrics JSON. Our conditional state routing allows the chat agent to answer dynamically without restarting the graph pipeline.
 
 ### 2. Distributed Vector Compute
 - **Hosted Vector DB**: Migrate from local ChromaDB to a hosted, auto-scaling vector database such as **Pinecone** (serverless) or **Milvus**. 
