@@ -45,9 +45,9 @@ The application is decoupled into a fast, async **FastAPI** backend and a premiu
 2. Activate the python virtual environment:
    - **Windows**: `.\venv\Scripts\activate`
    - **macOS/Linux**: `source venv/bin/activate`
-3. Create a `.env` file in the `backend/` directory and configure your OpenAI API Key (optional; fallbacks to high-fidelity mock engines if no key is provided):
+3. Create a `.env` file in the `backend/` directory and configure your Google Gemini API Key (optional; fallbacks to high-fidelity mock engines if no key is provided):
    ```env
-   OPENAI_API_KEY=your_openai_api_key_here
+   GOOGLE_API_KEY=your_google_ai_studio_api_key_here
    ```
 4. Start the FastAPI development server:
    ```bash

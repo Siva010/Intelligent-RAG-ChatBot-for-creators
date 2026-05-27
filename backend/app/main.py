@@ -38,6 +38,7 @@ class ChatRequest(BaseModel):
 async def health_check():
     return {
         "status": "healthy",
+        "google_configured": bool(settings.google_api_key),
         "openai_configured": bool(settings.openai_api_key)
     }
 
@@ -76,7 +77,7 @@ async def analyze_videos(req: AnalyzeRequest):
         vector_store.index_transcript(data_b["video_id"], data_b["transcript"])
     except Exception as e:
         # Log error and continue to keep app operational
-        app_logger = settings.openai_api_key # Dummy to avoid logger complaints
+        app_logger = settings.google_api_key # Dummy to avoid logger complaints
         print(f"Vector indexing error: {e}")
 
     # 4. Initialize LangGraph Session & Hook Audit

@@ -74,11 +74,11 @@ def generate_hook_node(state: AgentState) -> Dict[str, Any]:
     video_a = state["video_a"]
     video_b = state["video_b"]
     
-    # If OpenAI key exists, generate a professional hook comparison. Otherwise use mock comparison.
-    if settings.openai_api_key:
+    # If Google API key exists, generate a professional hook comparison. Otherwise use mock comparison.
+    if settings.google_api_key:
         try:
-            from langchain_openai import ChatOpenAI
-            llm = ChatOpenAI(model="gpt-4o-mini", api_key=settings.openai_api_key, temperature=0.2)
+            from langchain_google_genai import ChatGoogleGenerativeAI
+            llm = ChatGoogleGenerativeAI(model="gemini-1.5-flash", google_api_key=settings.google_api_key, temperature=0.2)
             # Create a prompt for the hook analysis
             hook_prompt = f"""Perform a direct, comparative hook audit of Video A vs Video B based on their titles and first 15 seconds transcripts.
 Video A Hook: "{vector_store.isolate_hooks(video_a.get("transcript", []))}" (Engagement: {video_a.get("engagement_rate")}%)
@@ -194,15 +194,15 @@ Cite these exact timestamps (e.g. [Video A @ 01:24]) when referencing them in yo
     for m in messages[1:]:
         llm_messages.append(m)
         
-    if settings.openai_api_key:
+    if settings.google_api_key:
         try:
-            from langchain_openai import ChatOpenAI
-            llm = ChatOpenAI(model="gpt-4o-mini", api_key=settings.openai_api_key, temperature=0.3)
+            from langchain_google_genai import ChatGoogleGenerativeAI
+            llm = ChatGoogleGenerativeAI(model="gemini-1.5-flash", google_api_key=settings.google_api_key, temperature=0.3)
             # Invoke LLM
             response = llm.invoke(llm_messages)
             return {"messages": [response]}
         except Exception as e:
-            logger.error(f"Error calling ChatOpenAI: {e}")
+            logger.error(f"Error calling Google Gemini: {e}")
             
     # Mock Chat assistant response if offline or OpenAI failed
     mock_reply = generate_mock_chat_response(query, state, retrieved_context)

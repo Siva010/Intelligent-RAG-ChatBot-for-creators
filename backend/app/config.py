@@ -6,7 +6,8 @@ from dotenv import load_dotenv
 load_dotenv()
 
 class Settings(BaseSettings):
-    openai_api_key: str = os.getenv("OPENAI_API_KEY", "")
+    google_api_key: str = os.getenv("GOOGLE_API_KEY", "")
+    openai_api_key: str = os.getenv("OPENAI_API_KEY", "") # Kept for fallback if someone still uses it, but default is google
     chroma_db_dir: str = os.getenv("CHROMA_DB_DIR", "./chroma_db")
     cache_expiry_seconds: int = 3600
     host: str = "127.0.0.1"
