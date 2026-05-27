@@ -59,8 +59,8 @@ export default function ChatConsole({
         <span
           key={startIndex}
           className={`inline-flex items-center gap-1 px-2 py-0.5 mx-1 text-xs font-semibold rounded-md border cursor-pointer select-none transition-all hover:scale-105 duration-200 ${isVideoA
-              ? 'bg-indigo-500/10 text-indigo-300 border-indigo-500/30 hover:bg-indigo-500/20'
-              : 'bg-violet-500/10 text-violet-300 border-violet-500/30 hover:bg-violet-500/20'
+            ? 'bg-indigo-500/10 text-indigo-300 border-indigo-500/30 hover:bg-indigo-500/20'
+            : 'bg-violet-500/10 text-violet-300 border-violet-500/30 hover:bg-violet-500/20'
             }`}
           title={`Jump to ${videoLabel} at ${timestamp}`}
         >
@@ -147,8 +147,8 @@ export default function ChatConsole({
               {/* Avatar */}
               <div
                 className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center border ${msg.role === 'user'
-                    ? 'bg-zinc-800 border-zinc-700 text-zinc-200'
-                    : 'bg-indigo-500/10 border-indigo-500/20 text-indigo-400'
+                  ? 'bg-zinc-800 border-zinc-700 text-zinc-200'
+                  : 'bg-indigo-500/10 border-indigo-500/20 text-indigo-400'
                   }`}
               >
                 {msg.role === 'user' ? <User className="w-4 h-4" /> : <Bot className="w-4 h-4" />}
@@ -157,8 +157,8 @@ export default function ChatConsole({
               {/* Bubble */}
               <div
                 className={`flex-1 p-4 rounded-2xl border ${msg.role === 'user'
-                    ? 'bg-zinc-800/40 border-zinc-700/50 text-zinc-200 rounded-tr-none'
-                    : 'bg-zinc-900/40 border-zinc-800 text-zinc-300 rounded-tl-none'
+                  ? 'bg-zinc-800/40 border-zinc-700/50 text-zinc-200 rounded-tr-none'
+                  : 'bg-zinc-900/40 border-zinc-800 text-zinc-300 rounded-tl-none'
                   }`}
               >
                 <MarkdownRenderer content={msg.content} />
