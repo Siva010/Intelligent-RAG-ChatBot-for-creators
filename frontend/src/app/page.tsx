@@ -196,11 +196,6 @@ export default function Home() {
             <p className="text-sm text-zinc-400">
               Input two video URLs below. Supports YouTube, Instagram Reels, and TikTok. Our scraping service extracts the raw transcripts and engagement rates, indexes the semantic segments, and loads the script doctor state machine.
             </p>
-            <p className="text-xs text-zinc-600 mt-2">
-              💡 <strong className="text-zinc-500">Instagram / TikTok tip:</strong> For real metrics, export your browser cookies to a file named{' '}
-              <code className="bg-zinc-800 px-1 py-0.5 rounded text-zinc-400">cookies.txt</code>{' '}
-              and place it in the <code className="bg-zinc-800 px-1 py-0.5 rounded text-zinc-400">backend/</code> directory.
-            </p>
           </div>
 
           <form onSubmit={handleIngest} className="space-y-6">

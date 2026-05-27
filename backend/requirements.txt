@@ -9,6 +9,7 @@ langchain>=0.1.0
 langgraph>=0.0.26
 langchain-openai>=0.0.2
 langchain-google-genai>=1.0.0
+google-genai>=1.0.0
 chromadb>=0.4.15
 python-dotenv>=1.0.0
 
