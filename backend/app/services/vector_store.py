@@ -1,5 +1,6 @@
 import logging
 import uuid
+import time
 import numpy as np
 from typing import List, Dict, Any, Tuple, Optional
 from app.config import settings
@@ -162,15 +163,28 @@ class VectorStoreManager:
                         embeddings.append([0.0] * EMBED_DIM)
                         logger.warning("Skipped empty chunk — inserted zero vector placeholder.")
                         continue
-                    response = client.models.embed_content(
-                        model="gemini-embedding-001",
-                        contents=stripped,
-                        config=genai_types.EmbedContentConfig(
-                            task_type="RETRIEVAL_DOCUMENT"
-                        ),
-                    )
-                    emb: list[float] = (response.embeddings[0].values if response.embeddings else None) or [0.0] * EMBED_DIM
-                    embeddings.append(emb)
+                    max_retries = 3
+                    for attempt in range(max_retries):
+                        try:
+                            response = client.models.embed_content(
+                                model="gemini-embedding-001",
+                                contents=stripped,
+                                config=genai_types.EmbedContentConfig(
+                                    task_type="RETRIEVAL_DOCUMENT"
+                                ),
+                            )
+                            emb: list[float] = (response.embeddings[0].values if response.embeddings else None) or [0.0] * EMBED_DIM
+                            embeddings.append(emb)
+                            # Small intentional delay to avoid bursting the API
+                            time.sleep(1)
+                            break
+                        except Exception as e:
+                            err_str = str(e)
+                            if "429" in err_str and attempt < max_retries - 1:
+                                logger.warning(f"Embedding rate limit hit, waiting 15s before retry (Attempt {attempt+1}/{max_retries})...")
+                                time.sleep(15)
+                            else:
+                                raise e
                 logger.debug(f"Google embeddings generated for {len(texts)} texts")
                 return embeddings
             except Exception as e:

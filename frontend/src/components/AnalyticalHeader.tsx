@@ -152,7 +152,18 @@ export default function AnalyticalHeader({ videoA, videoB }: AnalyticalHeaderPro
               <Percent className="w-3.5 h-3.5" />
               Engagement
             </div>
-            <div className="text-xl font-bold text-white">{data.engagement_rate}%</div>
+            <div className="flex items-baseline gap-2">
+              <div className="text-xl font-bold text-white">{data.engagement_rate}%</div>
+              <span 
+                title="1-3% Average | 4-6% Excellent | >10% Extremely Rare (viral/hyper-loyal)"
+                className={`cursor-help text-[10px] px-1.5 py-0.5 rounded border ${
+                data.engagement_rate > 10 ? 'bg-amber-500/10 border-amber-500/20 text-amber-400' :
+                data.engagement_rate >= 4 ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' :
+                'bg-zinc-500/10 border-zinc-500/20 text-zinc-400'
+              }`}>
+                {data.engagement_rate > 10 ? 'Rare' : data.engagement_rate >= 4 ? 'Excellent' : 'Average'}
+              </span>
+            </div>
             {otherData && (
               <div className="mt-1">
                 {(() => {

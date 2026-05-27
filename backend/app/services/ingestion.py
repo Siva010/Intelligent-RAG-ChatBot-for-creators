@@ -40,10 +40,10 @@ def _extract_yt_transcript(video_id: str) -> List[Dict[str, Any]]:
     """Fetch YouTube transcript via youtube-transcript-api."""
     if hasattr(YouTubeTranscriptApi, 'get_transcript'):
         get_t: Any = getattr(YouTubeTranscriptApi, 'get_transcript')
-        raw = get_t(video_id, languages=['en', 'en-US', 'en-GB'])
+        raw = get_t(video_id, languages=['en', 'hi', 'en-US', 'en-GB'])
     else:
         api_instance = YouTubeTranscriptApi()
-        raw = api_instance.fetch(video_id, languages=['en', 'en-US', 'en-GB'])
+        raw = api_instance.fetch(video_id, languages=['en', 'hi', 'en-US', 'en-GB'])
 
     result = []
     for entry in raw:
