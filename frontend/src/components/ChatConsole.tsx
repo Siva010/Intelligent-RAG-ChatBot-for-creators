@@ -58,13 +58,13 @@ export default function ChatConsole({
       parts.push(
         <span
           key={startIndex}
-          className={`inline-flex items-center gap-1 px-2 py-0.5 mx-1 text-xs font-semibold rounded-md border cursor-pointer select-none transition-all hover:scale-105 duration-200 ${isVideoA
-            ? 'bg-indigo-500/10 text-indigo-300 border-indigo-500/30 hover:bg-indigo-500/20'
-            : 'bg-violet-500/10 text-violet-300 border-violet-500/30 hover:bg-violet-500/20'
+          className={`inline-flex items-center gap-1 px-2 py-0.5 mx-1 text-[10px] uppercase font-black tracking-widest rounded-md border cursor-pointer select-none transition-all hover:scale-105 duration-200 ${isVideoA
+            ? 'bg-sky-500/10 text-sky-300 border-sky-500/30 hover:bg-sky-500/20'
+            : 'bg-cyan-500/10 text-cyan-300 border-cyan-500/30 hover:bg-cyan-500/20'
             }`}
           title={`Jump to ${videoLabel} at ${timestamp}`}
         >
-          <PlayCircle className="w-3 h-3 text-indigo-400" />
+          <PlayCircle className="w-3 h-3 text-sky-400" />
           {videoLabel} @ {timestamp}
         </span>
       );
@@ -100,7 +100,7 @@ export default function ChatConsole({
           h2: ({ children }) => <h2 className="text-lg font-bold text-white mt-3 mb-2">{children}</h2>,
           h3: ({ children }) => <h3 className="text-md font-bold text-white mt-2 mb-1">{children}</h3>,
           code: ({ children }) => (
-            <code className="bg-zinc-950 px-1.5 py-0.5 rounded text-xs text-indigo-400 font-mono border border-zinc-800">
+            <code className="bg-zinc-950 px-1.5 py-0.5 rounded text-[10px] tracking-wider text-sky-400 font-mono border border-zinc-800">
               {children}
             </code>
           ),
@@ -117,7 +117,7 @@ export default function ChatConsole({
   };
 
   return (
-    <div className="flex flex-col h-[500px] border border-zinc-800 rounded-2xl bg-zinc-900/30 backdrop-blur-md overflow-hidden">
+    <div className="flex flex-col h-[70vh] md:h-[600px] border border-zinc-800 rounded-2xl bg-zinc-900/40 backdrop-blur-md overflow-hidden shadow-2xl animate-fade-in-up delay-200">
       {/* Console Header */}
       <div className="flex items-center justify-between px-6 py-4 border-b border-zinc-800 bg-zinc-900/60">
         <div className="flex items-center gap-2">
@@ -131,7 +131,7 @@ export default function ChatConsole({
       <div className="flex-1 overflow-y-auto p-6 space-y-6">
         {messages.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full text-center max-w-sm mx-auto">
-            <Bot className="w-10 h-10 text-indigo-500 mb-4 stroke-[1.5]" />
+            <Bot className="w-10 h-10 text-sky-500 mb-4 stroke-[1.5]" />
             <h3 className="text-md font-bold text-white mb-2">Ask the Script Doctor</h3>
             <p className="text-xs text-zinc-400 leading-relaxed">
               Compare the hooks, pacing, retention triggers, and structure. Ask anything about how Video A compares to Video B.
@@ -141,14 +141,14 @@ export default function ChatConsole({
           messages.map((msg, idx) => (
             <div
               key={idx}
-              className={`flex gap-4 max-w-3xl ${msg.role === 'user' ? 'ml-auto flex-row-reverse' : ''
+              className={`flex gap-4 max-w-3xl animate-slide-up ${msg.role === 'user' ? 'ml-auto flex-row-reverse' : ''
                 }`}
             >
               {/* Avatar */}
               <div
                 className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center border ${msg.role === 'user'
                   ? 'bg-zinc-800 border-zinc-700 text-zinc-200'
-                  : 'bg-indigo-500/10 border-indigo-500/20 text-indigo-400'
+                  : 'bg-sky-500/10 border-sky-500/20 text-sky-400'
                   }`}
               >
                 {msg.role === 'user' ? <User className="w-4 h-4" /> : <Bot className="w-4 h-4" />}
@@ -169,7 +169,7 @@ export default function ChatConsole({
 
         {isLoading && (
           <div className="flex gap-4 max-w-3xl">
-            <div className="flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center border bg-indigo-500/10 border-indigo-500/20 text-indigo-400">
+            <div className="flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center border bg-sky-500/10 border-sky-500/20 text-sky-400">
               <Loader2 className="w-4 h-4 animate-spin" />
             </div>
             <div className="flex-1 p-4 rounded-2xl border bg-zinc-900/40 border-zinc-800 text-zinc-400 rounded-tl-none flex items-center gap-2">
@@ -198,12 +198,12 @@ export default function ChatConsole({
                 ? 'Ingest video URLs first to start chatting'
                 : 'Ask: "Why did Video A outperform B?" or "Compare the hooks..."'
             }
-            className="w-full h-12 pl-4 pr-12 rounded-xl bg-zinc-900 border border-zinc-800 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 focus:outline-none text-sm text-zinc-150 placeholder-zinc-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+            className="w-full h-12 pl-4 pr-12 rounded-xl bg-zinc-900/80 border border-zinc-800 focus:border-sky-500 focus:ring-1 focus:ring-sky-500 focus:shadow-[0_0_20px_rgba(56,189,248,0.15)] focus:outline-none text-sm text-zinc-100 placeholder-zinc-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
           />
           <button
             type="submit"
             disabled={disabled || isLoading || !input.trim()}
-            className="absolute right-2 p-2 rounded-lg bg-indigo-600 text-white hover:bg-indigo-500 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            className="absolute right-2 p-2 rounded-lg bg-sky-500 text-[#09111E] hover:bg-sky-400 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
           >
             <Send className="w-4 h-4" />
           </button>

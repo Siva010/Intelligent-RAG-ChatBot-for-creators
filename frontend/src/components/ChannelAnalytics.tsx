@@ -59,7 +59,7 @@ export default function ChannelAnalytics() {
           </div>
           <input
             type="text"
-            className="block w-full p-4 pl-10 text-sm border rounded-lg bg-zinc-900 border-zinc-700 placeholder-zinc-400 text-white focus:ring-indigo-500 focus:border-indigo-500"
+            className="block w-full p-4 pl-10 text-sm border rounded-lg bg-[#09111E] border-white/10 placeholder-zinc-500 text-white focus:ring-sky-500 focus:border-sky-500"
             placeholder="Enter YouTube Channel ID or Handle (e.g. @MrBeast)..."
             value={channelId}
             onChange={(e) => setChannelId(e.target.value)}
@@ -68,7 +68,7 @@ export default function ChannelAnalytics() {
         <button
           type="submit"
           disabled={loading}
-          className="text-white bg-indigo-600 hover:bg-indigo-700 font-medium rounded-lg text-sm px-6 py-4 focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50"
+          className="text-[#09111E] bg-sky-500 hover:bg-sky-400 font-black tracking-widest uppercase rounded-lg text-sm px-6 py-4 focus:outline-none focus:ring-2 focus:ring-sky-500 disabled:opacity-50"
         >
           {loading ? 'Analyzing...' : 'Analyze Channel'}
         </button>
@@ -111,8 +111,8 @@ export default function ChannelAnalytics() {
             {/* Trend Detection Chart */}
             <div className="bg-zinc-900/50 border border-zinc-800 rounded-2xl p-6">
               <div className="flex items-center gap-3 mb-6">
-                <div className="p-2 bg-indigo-500/20 rounded-lg">
-                  <TrendingUp className="w-5 h-5 text-indigo-400" />
+                <div className="p-2 bg-sky-500/20 rounded-lg">
+                  <TrendingUp className="w-5 h-5 text-sky-400" />
                 </div>
                 <h2 className="text-lg font-semibold text-white">Hook Retention Trend (12 Weeks)</h2>
               </div>
@@ -191,8 +191,8 @@ export default function ChannelAnalytics() {
               ))}
             </div>
             
-            <div className="mt-6 p-4 bg-indigo-500/10 border border-indigo-500/20 rounded-xl">
-              <p className="text-sm text-indigo-200"><strong>AI Insight:</strong> {data.summary}</p>
+            <div className="mt-6 p-4 bg-sky-500/10 border border-sky-500/20 rounded-xl">
+              <p className="text-sm text-sky-200"><strong className="text-sky-400 uppercase tracking-widest text-[10px]">AI Insight:</strong> {data.summary}</p>
             </div>
           </div>
 

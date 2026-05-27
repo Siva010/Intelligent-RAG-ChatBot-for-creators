@@ -27,7 +27,7 @@ export default function AnalyticalHeader({ videoA, videoB }: AnalyticalHeaderPro
   if (!videoA && !videoB) {
     return (
       <div className="flex flex-col items-center justify-center p-8 border border-dashed border-zinc-800 rounded-2xl bg-zinc-950 text-zinc-400">
-        <Sparkles className="w-8 h-8 mb-3 text-indigo-500 animate-pulse" />
+        <Sparkles className="w-8 h-8 mb-3 text-sky-500 animate-pulse" />
         <p className="text-sm font-medium">Input two video URLs above to start the deep analytical audit</p>
       </div>
     );
@@ -59,7 +59,7 @@ export default function AnalyticalHeader({ videoA, videoB }: AnalyticalHeaderPro
     const metrics = data.metrics;
     
     return (
-      <div className="flex flex-col flex-1 p-6 rounded-2xl bg-zinc-900/50 border border-zinc-800 backdrop-blur-md">
+      <div className="flex flex-col flex-1 p-6 rounded-2xl bg-zinc-900/40 border border-zinc-800/60 backdrop-blur-md shadow-xl animate-fade-in-up">
         <div className="flex items-center justify-between mb-4">
           <span className={`px-3 py-1 text-xs font-semibold uppercase tracking-wider rounded-full ${colorClass}`}>
             {title}: {data.platform}
@@ -76,7 +76,7 @@ export default function AnalyticalHeader({ videoA, videoB }: AnalyticalHeaderPro
 
         <div className="grid grid-cols-2 gap-4">
           {/* Views Card */}
-          <div className="p-4 rounded-xl bg-zinc-950 border border-zinc-800/80">
+          <div className="p-4 rounded-xl bg-zinc-950/80 border border-zinc-800/80 hover:-translate-y-1 hover:border-zinc-700 hover:shadow-lg transition-all animate-slide-up delay-100">
             <div className="flex items-center gap-2 text-zinc-400 mb-1 text-xs font-medium">
               <Play className="w-3.5 h-3.5" />
               Views
@@ -103,7 +103,7 @@ export default function AnalyticalHeader({ videoA, videoB }: AnalyticalHeaderPro
           </div>
 
           {/* Likes Card */}
-          <div className="p-4 rounded-xl bg-zinc-950 border border-zinc-800/80">
+          <div className="p-4 rounded-xl bg-zinc-950/80 border border-zinc-800/80 hover:-translate-y-1 hover:border-zinc-700 hover:shadow-lg transition-all animate-slide-up delay-150">
             <div className="flex items-center gap-2 text-zinc-400 mb-1 text-xs font-medium">
               <ThumbsUp className="w-3.5 h-3.5" />
               Likes
@@ -125,7 +125,7 @@ export default function AnalyticalHeader({ videoA, videoB }: AnalyticalHeaderPro
           </div>
 
           {/* Comments Card */}
-          <div className="p-4 rounded-xl bg-zinc-950 border border-zinc-800/80">
+          <div className="p-4 rounded-xl bg-zinc-950/80 border border-zinc-800/80 hover:-translate-y-1 hover:border-zinc-700 hover:shadow-lg transition-all animate-slide-up delay-200">
             <div className="flex items-center gap-2 text-zinc-400 mb-1 text-xs font-medium">
               <MessageSquare className="w-3.5 h-3.5" />
               Comments
@@ -147,7 +147,7 @@ export default function AnalyticalHeader({ videoA, videoB }: AnalyticalHeaderPro
           </div>
 
           {/* Engagement Rate Card */}
-          <div className="p-4 rounded-xl bg-zinc-950 border border-zinc-800/80">
+          <div className="p-4 rounded-xl bg-zinc-950/80 border border-zinc-800/80 hover:-translate-y-1 hover:border-zinc-700 hover:shadow-lg transition-all animate-slide-up delay-300">
             <div className="flex items-center gap-2 text-zinc-400 mb-1 text-xs font-medium">
               <Percent className="w-3.5 h-3.5" />
               Engagement
@@ -186,8 +186,8 @@ export default function AnalyticalHeader({ videoA, videoB }: AnalyticalHeaderPro
 
   return (
     <div className="flex flex-col md:flex-row gap-6 w-full mb-8">
-      {videoA && renderKPICards("Video A", videoA, videoB, "bg-indigo-500/10 text-indigo-400 border border-indigo-500/20")}
-      {videoB && renderKPICards("Video B", videoB, videoA, "bg-violet-500/10 text-violet-400 border border-violet-500/20")}
+      {videoA && renderKPICards("Video A", videoA, videoB, "bg-sky-500/10 text-sky-400 border border-sky-500/20")}
+      {videoB && renderKPICards("Video B", videoB, videoA, "bg-cyan-500/10 text-cyan-400 border border-cyan-500/20")}
     </div>
   );
 }
