@@ -33,7 +33,7 @@ def _get_llm(temperature: float = 0.15):
     """Returns a configured Gemini LLM instance."""
     from langchain_google_genai import ChatGoogleGenerativeAI
     return ChatGoogleGenerativeAI(
-        model="gemini-2.5-flash",
+        model="gemini-1.5-flash",
         google_api_key=settings.google_api_key,
         temperature=temperature,
         # Larger context window means we can pass more transcript chunks
