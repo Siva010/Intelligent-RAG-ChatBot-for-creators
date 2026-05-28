@@ -1,9 +1,11 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { Play, Sparkles, AlertCircle, RefreshCw, BarChart3, HelpCircle } from 'lucide-react';
-import AnalyticalHeader, { VideoData } from '../components/AnalyticalHeader';
+import { ArrowRight, AlertCircle, RefreshCw, BarChart3, Search, Sparkles, Wand2 } from 'lucide-react';
 import ChatConsole, { ChatMessage } from '../components/ChatConsole';
+import AnalyticalHeader, { VideoData } from '../components/AnalyticalHeader';
+import MultiModalMockup from '../components/MultiModalMockup';
+import ScriptRewriterAccordion from '../components/ScriptRewriterAccordion';
 
 export default function Home() {
   const [urlA, setUrlA] = useState('');
@@ -173,7 +175,7 @@ export default function Home() {
             <h1 className="text-lg font-black tracking-widest uppercase text-white">
               CJ <span className="text-[10px] px-2 py-0.5 ml-1.5 font-bold border border-[#00B2FF]/30 rounded-full bg-[#00B2FF]/10 text-[#00B2FF] align-middle">REPLICA</span>
             </h1>
-            <p className="text-[10px] text-zinc-500 font-bold uppercase tracking-widest mt-0.5">Viral Social Script Doctor</p>
+            <p className="text-[10px] text-zinc-500 font-bold uppercase tracking-widest mt-0.5">Viral Social Content RAG Chatbot</p>
           </div>
         </div>
         <div className="flex items-center gap-4 text-xs font-semibold text-zinc-400">
@@ -297,7 +299,7 @@ export default function Home() {
                       <div className="p-5 rounded-2xl bg-[#09111E] border border-white/5">
                         <h4 className="text-[10px] font-black text-sky-400 mb-2 uppercase tracking-widest">Isolated Hook Diagnostics</h4>
                         <p className="text-xs leading-relaxed text-zinc-400">
-                          The first 15 seconds have been isolated into a high-priority context block. Ask the Script Doctor specifically about the hook pacing or curiosity loops to get instant feedback.
+                          The first 15 seconds have been isolated into a high-priority context block. Ask the Content RAG Chatbot specifically about the hook pacing or curiosity loops to get instant feedback.
                         </p>
                       </div>
 
@@ -342,6 +344,14 @@ export default function Home() {
                 />
               </div>
             </div>
+
+            {/* Multi-Modal Pro Feature Mockup */}
+            <MultiModalMockup />
+
+            {/* Script Rewriter Integration Accordion */}
+            <ScriptRewriterAccordion originalText={videoA?.transcript?.[0]?.text || ""} />
+
+            <div className="pb-8"></div>
           </section>
         )}
       </main>

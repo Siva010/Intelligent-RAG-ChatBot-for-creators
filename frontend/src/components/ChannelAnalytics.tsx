@@ -34,7 +34,10 @@ export default function ChannelAnalytics() {
     <div className="flex flex-col gap-6 p-6">
       <div className="flex justify-between items-start">
         <div className="flex flex-col gap-2">
-          <h1 className="text-3xl font-bold tracking-tight text-white">Channel Analytics</h1>
+          <h1 className="text-3xl font-bold tracking-tight text-white flex items-center gap-3">
+            Channel Analytics
+            <span className="text-[10px] px-2 py-0.5 font-bold border border-amber-500/30 rounded-full bg-amber-500/10 text-amber-500 tracking-widest uppercase">🚧 Under Construction</span>
+          </h1>
           <p className="text-zinc-400">Track hook effectiveness across a creator's catalog and benchmark against competitors.</p>
         </div>
         {data && (

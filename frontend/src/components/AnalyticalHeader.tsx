@@ -16,6 +16,7 @@ export interface VideoData {
   engagement_rate: number;
   whisper_stubbed?: boolean;
   is_estimated_views?: boolean;
+  transcript?: Array<{ text: string; start: number; duration: number }>;
 }
 
 interface AnalyticalHeaderProps {

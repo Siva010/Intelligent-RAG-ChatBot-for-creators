@@ -122,7 +122,7 @@ export default function ChatConsole({
       <div className="flex items-center justify-between px-6 py-4 border-b border-zinc-800 bg-zinc-900/60">
         <div className="flex items-center gap-2">
           <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
-          <h2 className="text-sm font-semibold text-white tracking-wide">Script Doctor Co-Pilot</h2>
+          <h2 className="text-sm font-semibold text-white tracking-wide">Content RAG Chatbot</h2>
         </div>
         <span className="text-[10px] uppercase font-bold tracking-widest text-zinc-500">Active Session</span>
       </div>
@@ -132,7 +132,7 @@ export default function ChatConsole({
         {messages.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full text-center max-w-sm mx-auto">
             <Bot className="w-10 h-10 text-sky-500 mb-4 stroke-[1.5]" />
-            <h3 className="text-md font-bold text-white mb-2">Ask the Script Doctor</h3>
+            <h3 className="text-md font-bold text-white mb-2">Ask the Content RAG Chatbot</h3>
             <p className="text-xs text-zinc-400 leading-relaxed">
               Compare the hooks, pacing, retention triggers, and structure. Ask anything about how Video A compares to Video B.
             </p>

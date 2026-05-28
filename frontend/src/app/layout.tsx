@@ -14,8 +14,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "RAG Social Chatbot",
-  description: "Viral Social Script Doctor Dashboard",
+  title: "CJ Replica",
+  description: "Viral Social Content RAG Chatbot Dashboard",
 };
 
 export default function RootLayout({
@@ -42,10 +42,18 @@ export default function RootLayout({
                   <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" className="w-8 h-8 text-[#00B2FF] stroke-current stroke-[3]"><path d="M21 12C21 16.9706 16.9706 21 12 21C9.69494 21 7.59227 20.1334 6 18.7083L3 21L5.29168 18C3.86656 16.4077 3 14.3051 3 12C3 7.02944 7.02944 3 12 3C16.9706 3 21 7.02944 21 12Z"/></svg>
                   <span className="text-white font-black text-2xl tracking-wide">CJ<span className="text-[#00B2FF]">.COM</span></span>
                 </div>
-                <div className="flex items-baseline space-x-2 sm:space-x-6 md:ml-16 overflow-x-auto">
-                  <Link href="/" className="text-zinc-300 hover:text-white px-2 py-2 text-xs font-bold uppercase tracking-widest transition-colors whitespace-nowrap">A/B Testing</Link>
-                  <Link href="/dashboard" className="text-zinc-300 hover:text-white px-2 py-2 text-xs font-bold uppercase tracking-widest transition-colors whitespace-nowrap">Channel Analytics</Link>
+                <div className="hidden md:block">
+                  <div className="ml-10 flex items-baseline space-x-4">
+                    <Link href="/" className="text-zinc-300 hover:bg-zinc-800 hover:text-white px-3 py-2 rounded-md text-sm font-medium transition-colors">A/B Testing</Link>
+                    <Link href="/dashboard" className="text-zinc-300 hover:bg-[#0D182A] hover:text-white px-3 py-2 rounded-md text-sm font-medium transition-colors">🚧 Channel Analytics</Link>
+                    <Link href="/alerts" className="text-zinc-300 hover:bg-[#0D182A] hover:text-white px-3 py-2 rounded-md text-sm font-medium transition-colors">🚧 Trend Alerts</Link>
+                  </div>
                 </div>
+              </div>
+              <div className="flex items-center gap-4">
+                <Link href="/pricing" className="flex h-10 items-center justify-center px-6 rounded-full bg-gradient-to-r from-sky-400 to-cyan-500 hover:from-sky-300 hover:to-cyan-400 text-[10px] font-black tracking-widest text-[#09111E] uppercase shadow-[0_0_15px_rgba(56,189,248,0.3)] hover:shadow-[0_0_20px_rgba(56,189,248,0.5)] transition-all hover:-translate-y-0.5 active:translate-y-0">
+                  Upgrade to Pro
+                </Link>
               </div>
             </div>
           </div>
