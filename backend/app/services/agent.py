@@ -401,11 +401,14 @@ def send_chat_message(session_id: str, message: str) -> Dict[str, Any]:
 async def stream_chat_message_sse(session_id: str, message: str):
     """
     Async generator that yields the AI response word-by-word for SSE streaming.
+    send_chat_message is a blocking sync function (LLM + LangGraph), so we run
+    it in a thread pool via asyncio.to_thread() to avoid blocking the event loop.
     """
     import asyncio
 
     try:
-        res = send_chat_message(session_id, message)
+        # Offload the blocking LLM call to a thread so the event loop stays free
+        res = await asyncio.to_thread(send_chat_message, session_id, message)
         reply = res["reply"]
     except Exception as e:
         logger.error(f"Error in send_chat_message: {e}")

@@ -1,3 +1,4 @@
+import asyncio
 from fastapi import FastAPI, HTTPException, Body
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -17,10 +18,10 @@ app = FastAPI(
     version="0.1.0"
 )
 
-# Enable CORS for Next.js frontend
+# Enable CORS — origins are loaded from settings (configurable via CORS_ORIGINS env var)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
+    allow_origins=settings.cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -57,7 +58,8 @@ async def analyze_videos(req: AnalyzeRequest):
     if not data_a:
         try:
             ingestor_a = get_ingestor_for_url(url_a)
-            data_a = ingestor_a.ingest(url_a)
+            # Run blocking yt-dlp I/O in a thread so the event loop is not blocked
+            data_a = await asyncio.to_thread(ingestor_a.ingest, url_a)
             video_cache.set(url_a, data_a)
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Failed to ingest Video A: {str(e)}")
@@ -67,23 +69,24 @@ async def analyze_videos(req: AnalyzeRequest):
     if not data_b:
         try:
             ingestor_b = get_ingestor_for_url(url_b)
-            data_b = ingestor_b.ingest(url_b)
+            # Run blocking yt-dlp I/O in a thread so the event loop is not blocked
+            data_b = await asyncio.to_thread(ingestor_b.ingest, url_b)
             video_cache.set(url_b, data_b)
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Failed to ingest Video B: {str(e)}")
 
-    # 3. Index transcripts in Vector DB
+    # 3. Index transcripts in Vector DB (blocking embedding API calls — run in thread)
     try:
-        vector_store.index_transcript(data_a["video_id"], data_a["transcript"])
-        vector_store.index_transcript(data_b["video_id"], data_b["transcript"])
+        await asyncio.to_thread(vector_store.index_transcript, data_a["video_id"], data_a["transcript"])
+        await asyncio.to_thread(vector_store.index_transcript, data_b["video_id"], data_b["transcript"])
     except Exception as e:
         # Log error and continue to keep app operational
-        app_logger = settings.google_api_key # Dummy to avoid logger complaints
-        print(f"Vector indexing error: {e}")
+        import logging
+        logging.getLogger(__name__).warning(f"Vector indexing error: {e}")
 
-    # 4. Initialize LangGraph Session & Hook Audit
+    # 4. Initialize LangGraph Session & Hook Audit (blocking LLM call — run in thread)
     try:
-        session_result = initialize_session(session_id, data_a, data_b)
+        session_result = await asyncio.to_thread(initialize_session, session_id, data_a, data_b)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to initialize LangGraph agent session: {str(e)}")
 
@@ -115,8 +118,9 @@ async def analyze_videos(req: AnalyzeRequest):
 async def chat_stream(req: ChatRequest):
     if not req.session_id or not req.message:
         raise HTTPException(status_code=400, detail="session_id and message are required.")
-    
+
     # Return streaming SSE Response
+    # stream_chat_message_sse internally offloads blocking LLM work to a thread
     generator = stream_chat_message_sse(req.session_id, req.message)
     return EventSourceResponse(generator)
 

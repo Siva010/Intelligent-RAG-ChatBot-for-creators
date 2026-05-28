@@ -19,7 +19,8 @@ export default function ChannelAnalytics() {
     setData(null);
 
     try {
-      const response = await fetch(`http://127.0.0.1:8000/channel/${channelId}/analytics`);
+      // URL-encode the channel ID so handles like @MrBeast don't break the URL path
+      const response = await fetch(`http://127.0.0.1:8000/channel/${encodeURIComponent(channelId)}/analytics`);
       if (!response.ok) throw new Error('Failed to fetch analytics');
       const result = await response.json();
       setData(result);

@@ -37,11 +37,14 @@ class SimpleVectorStore:
             self.documents.append({"id": doc_id, "text": text, "metadata": meta})
         logger.info(f"Added {len(texts)} documents to Simple Vector Store")
 
-    def query(self, query_text: str, n_results: int = 6) -> Dict[str, Any]:
-        """Simple word-overlap similarity search (TF-style)."""
+    def query(self, query_text: str, n_results: int = 6, video_ids: Optional[List[str]] = None) -> Dict[str, Any]:
+        """Simple word-overlap similarity search (TF-style), optionally filtered by video_ids."""
         query_words = set(query_text.lower().split())
         scored_docs = []
         for doc in self.documents:
+            # Apply video_id filter if provided — mirrors the ChromaDB code path
+            if video_ids and doc["metadata"].get("video_id") not in video_ids:
+                continue
             doc_words = doc["text"].lower().split()
             intersection = query_words.intersection(set(doc_words))
             score = len(intersection) / (len(query_words) + 1e-5)
@@ -260,16 +263,34 @@ class VectorStoreManager:
         self, transcript: List[Dict[str, Any]], video_id: str
     ) -> List[Dict[str, Any]]:
         """
-        Chunks the transcript body (skipping first 15s hook) into overlapping
-        segments of ~350 words with 10% overlap, preserving start timestamps.
+        Chunks the transcript into overlapping segments of ~350 words with 10% overlap,
+        preserving start timestamps.
+
+        The first 15s (hook) is always included as a dedicated high-priority chunk
+        tagged with `is_hook=True` in metadata. The body (>=15s) is then chunked
+        into overlapping 350-word segments.
         """
+        chunks = []
+
+        # --- Hook chunk (first 15 seconds) ---
+        hook_entries = [e for e in transcript if e.get("start", 0.0) < 15.0]
+        if hook_entries:
+            hook_text = " ".join(e.get("text", "") for e in hook_entries).strip()
+            if hook_text:
+                chunks.append({
+                    "video_id": video_id,
+                    "start": 0.0,
+                    "text": hook_text,
+                    "is_hook": True,
+                })
+
+        # --- Body chunks (>= 15 seconds) ---
         remaining_entries = [
             entry for entry in transcript if entry.get("start", 0.0) >= 15.0
         ]
         if not remaining_entries:
-            return []
+            return chunks
 
-        chunks = []
         words_buffer: List[str] = []
         start_time = remaining_entries[0].get("start", 15.0)
 
@@ -292,7 +313,7 @@ class VectorStoreManager:
             while len(words_buffer) >= target_words:
                 chunk_words = words_buffer[:target_words]
                 chunk_text = " ".join(chunk_words)
-                chunks.append({"video_id": video_id, "start": start_time, "text": chunk_text})
+                chunks.append({"video_id": video_id, "start": start_time, "text": chunk_text, "is_hook": False})
 
                 words_buffer = words_buffer[target_words - overlap_words:]
 
@@ -314,9 +335,11 @@ class VectorStoreManager:
                 "video_id": video_id,
                 "start": start_time,
                 "text": " ".join(words_buffer),
+                "is_hook": False,
             })
 
         return chunks
+
 
     # ------------------------------------------------------------------
     # Indexing
@@ -336,6 +359,7 @@ class VectorStoreManager:
             {
                 "video_id": c["video_id"],
                 "start_time": c["start"],
+                "is_hook": c.get("is_hook", False),
                 EMBEDDING_MODE_METADATA_KEY: embedding_mode,
             }
             for c in chunks
@@ -380,7 +404,7 @@ class VectorStoreManager:
         results = []
 
         if self.simple_store:
-            raw_results = self.simple_store.query(query, n_results=n_results * 3)
+            raw_results = self.simple_store.query(query, n_results=n_results * 3, video_ids=video_ids)
         else:
             try:
                 query_embeddings = self.get_query_embedding(query)

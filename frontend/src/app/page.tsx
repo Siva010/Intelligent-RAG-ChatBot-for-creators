@@ -24,9 +24,17 @@ export default function Home() {
   const [chatInput, setChatInput] = useState('');
   const [isChatLoading, setIsChatLoading] = useState(false);
 
-  // Generate a unique session ID on component mount
+  // Generate a unique session ID on component mount, persisted in sessionStorage
+  // so that rapid re-mounts within the same tab don't orphan LangGraph sessions.
   useEffect(() => {
-    setSessionId('session_' + Math.random().toString(36).substring(2, 11));
+    const stored = sessionStorage.getItem('cj_session_id');
+    if (stored) {
+      setSessionId(stored);
+    } else {
+      const newId = 'session_' + Math.random().toString(36).substring(2, 11);
+      sessionStorage.setItem('cj_session_id', newId);
+      setSessionId(newId);
+    }
   }, []);
 
   const handleIngest = async (e: React.FormEvent) => {
@@ -118,7 +126,8 @@ export default function Home() {
       let assistantReply = '';
 
       if (reader) {
-        while (true) {
+        let isDone = false;
+        while (!isDone) {
           const { value, done } = await reader.read();
           if (done) break;
 
@@ -129,6 +138,7 @@ export default function Home() {
             if (line.startsWith('data: ')) {
               const dataStr = line.slice(6).trim();
               if (dataStr === '[DONE]') {
+                isDone = true;
                 break;
               }
               try {
@@ -349,7 +359,17 @@ export default function Home() {
             <MultiModalMockup />
 
             {/* Script Rewriter Integration Accordion */}
-            <ScriptRewriterAccordion originalText={videoA?.transcript?.[0]?.text || ""} />
+            {(() => {
+              // Join all transcript entries from the first 15 seconds (mirrors backend isolate_hooks)
+              const hookText = videoA?.transcript
+                ? videoA.transcript
+                    .filter((entry) => (entry.start ?? 0) < 15)
+                    .map((entry) => entry.text)
+                    .join(' ')
+                    .trim()
+                : '';
+              return <ScriptRewriterAccordion originalText={hookText || videoA?.transcript?.[0]?.text || ''} />;
+            })()}
 
             <div className="pb-8"></div>
           </section>

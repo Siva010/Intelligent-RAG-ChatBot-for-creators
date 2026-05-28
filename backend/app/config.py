@@ -1,6 +1,7 @@
 import os
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from dotenv import load_dotenv
+from typing import List
 
 # Load .env file explicitly
 load_dotenv()
@@ -12,7 +13,16 @@ class Settings(BaseSettings):
     cache_expiry_seconds: int = 3600
     host: str = "127.0.0.1"
     port: int = 8000
-    
+
+    # CORS: comma-separated list of allowed origins.
+    # Override via CORS_ORIGINS env var for staging/production.
+    # Example: CORS_ORIGINS=https://app.example.com,https://staging.example.com
+    cors_origins: List[str] = [
+        o.strip()
+        for o in os.getenv("CORS_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000").split(",")
+        if o.strip()
+    ]
+
     # Configure settings config dict to load env files
     model_config = SettingsConfigDict(
         env_file=".env",

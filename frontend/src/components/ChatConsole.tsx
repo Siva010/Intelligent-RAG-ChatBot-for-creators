@@ -30,23 +30,37 @@ export default function ChatConsole({
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, isLoading]);
 
-  // Custom parser to format citations like [Video A @ 01:24] or [Video B @ 00:15] into premium badges
-  const parseCitations = (text: string) => {
-    const citationRegex = /\[(Video [A|B])\s*@\s*(\d{1,2}:\d{2})\]/g;
+  // Recursively process React node tree, replacing citation text with styled badges.
+  // This handles citations that appear inside bold, italic, code, or other inline elements.
+  const processCitationsInNode = (node: React.ReactNode, keyPrefix: string): React.ReactNode => {
+    if (typeof node === 'string') {
+      return parseCitations(node, keyPrefix);
+    }
+    if (Array.isArray(node)) {
+      return node.map((child, i) => processCitationsInNode(child, `${keyPrefix}-${i}`));
+    }
+    if (React.isValidElement(node)) {
+      const el = node as React.ReactElement<{ children?: React.ReactNode }>;
+      const newChildren = processCitationsInNode(el.props.children, keyPrefix);
+      return React.cloneElement(el, {}, newChildren);
+    }
+    return node;
+  };
 
-    // Check if there are matches. If not, just return text.
+  // Custom parser to format citations like [Video A @ 01:24] or [Video B @ 00:15] into premium badges.
+  // Returns an array of strings and JSX elements (badges).
+  const parseCitations = (text: string, keyPrefix: string = 'cit'): React.ReactNode => {
+    const citationRegex = /\[(Video [AB])\s*@\s*(\d{1,2}:\d{2})\]/g;
+
     if (!citationRegex.test(text)) return text;
-
-    // Reset regex index
     citationRegex.lastIndex = 0;
 
-    const parts = [];
+    const parts: React.ReactNode[] = [];
     let lastIndex = 0;
     let match;
 
     while ((match = citationRegex.exec(text)) !== null) {
       const startIndex = match.index;
-      // Add text before match
       if (startIndex > lastIndex) {
         parts.push(text.substring(lastIndex, startIndex));
       }
@@ -57,7 +71,7 @@ export default function ChatConsole({
 
       parts.push(
         <span
-          key={startIndex}
+          key={`${keyPrefix}-${startIndex}`}
           className={`inline-flex items-center gap-1 px-2 py-0.5 mx-1 text-[10px] uppercase font-black tracking-widest rounded-md border cursor-pointer select-none transition-all hover:scale-105 duration-200 ${isVideoA
             ? 'bg-sky-500/10 text-sky-300 border-sky-500/30 hover:bg-sky-500/20'
             : 'bg-cyan-500/10 text-cyan-300 border-cyan-500/30 hover:bg-cyan-500/20'
@@ -76,26 +90,24 @@ export default function ChatConsole({
       parts.push(text.substring(lastIndex));
     }
 
-    return parts;
+    return parts.length === 1 ? parts[0] : parts;
   };
 
-  // Helper component to render markdown with support for inline citations
+  // Helper component to render markdown with support for inline citations in all contexts
   const MarkdownRenderer = ({ content }: { content: string }) => {
     return (
       <ReactMarkdown
         components={{
-          p: ({ children }) => {
-            if (typeof children === 'string') {
-              return <p className="mb-3 last:mb-0 leading-relaxed text-zinc-300 text-sm">{parseCitations(children)}</p>;
-            }
-            return <p className="mb-3 last:mb-0 leading-relaxed text-zinc-300 text-sm">{children}</p>;
-          },
-          li: ({ children }) => {
-            if (typeof children === 'string') {
-              return <li className="leading-relaxed text-zinc-300 text-sm">{parseCitations(children)}</li>;
-            }
-            return <li className="leading-relaxed text-zinc-300 text-sm">{children}</li>;
-          },
+          p: ({ children }) => (
+            <p className="mb-3 last:mb-0 leading-relaxed text-zinc-300 text-sm">
+              {processCitationsInNode(children, 'p')}
+            </p>
+          ),
+          li: ({ children }) => (
+            <li className="leading-relaxed text-zinc-300 text-sm">
+              {processCitationsInNode(children, 'li')}
+            </li>
+          ),
           h1: ({ children }) => <h1 className="text-xl font-bold text-white mt-4 mb-2 first:mt-0">{children}</h1>,
           h2: ({ children }) => <h2 className="text-lg font-bold text-white mt-3 mb-2">{children}</h2>,
           h3: ({ children }) => <h3 className="text-md font-bold text-white mt-2 mb-1">{children}</h3>,
@@ -115,6 +127,7 @@ export default function ChatConsole({
       </ReactMarkdown>
     );
   };
+
 
   return (
     <div className="flex flex-col h-[70vh] md:h-[600px] border border-zinc-800 rounded-2xl bg-zinc-900/40 backdrop-blur-md overflow-hidden shadow-2xl animate-fade-in-up delay-200">
