@@ -33,7 +33,7 @@ def _get_llm(temperature: float = 0.15):
     """Returns a configured Gemini LLM instance."""
     from langchain_google_genai import ChatGoogleGenerativeAI
     return ChatGoogleGenerativeAI(
-        model="gemini-1.5-flash",
+        model="gemini-1.5-flash-latest",
         google_api_key=settings.google_api_key,
         temperature=temperature,
         # Larger context window means we can pass more transcript chunks
@@ -458,14 +458,24 @@ async def stream_chat_message_sse(session_id: str, message: str):
     try:
         inputs = {"messages": [HumanMessage(content=message)]}
         
+        emitted_any = False
         # astream_events is the safest way to extract streaming chunks in LangChain/LangGraph
         async for event in agent_graph.astream_events(inputs, config=config, version="v2"):
             kind = event["event"]
             if kind == "on_chat_model_stream":
                 chunk_content = event["data"]["chunk"].content
                 if chunk_content and isinstance(chunk_content, str):
+                    emitted_any = True
                     yield dict(data=json.dumps({"chunk": chunk_content}))
                     
+        if not emitted_any:
+            # If no stream events fired (e.g. mock fallback was used), yield the final state's message
+            final_state = agent_graph.get_state(config)
+            if final_state and final_state.values and final_state.values.get("messages"):
+                last_msg = final_state.values["messages"][-1]
+                if last_msg.type == "ai" and getattr(last_msg, "content", ""):
+                    yield dict(data=json.dumps({"chunk": last_msg.content}))
+
     except Exception as e:
         logger.error(f"Error in stream_chat_message_sse: {e}")
         yield dict(data=json.dumps({"chunk": f"**Error:** {str(e)} "}))
