@@ -53,68 +53,97 @@ async def analyze_videos(req: AnalyzeRequest):
     if not url_a or not url_b:
         raise HTTPException(status_code=400, detail="Both video URLs are required.")
 
-    async def _ingest(url: str, label: str):
-        """Fetch one video — checks cache first, then runs yt-dlp in a thread."""
-        cached = video_cache.get(url)
-        if cached:
-            return cached
-        try:
-            ingestor = get_ingestor_for_url(url)
-            data = await asyncio.to_thread(ingestor.ingest, url)
-            video_cache.set(url, data)
-            return data
-        except Exception as e:
-            raise HTTPException(
-                status_code=500,
-                detail=f"Failed to ingest {label}: {str(e)}"
-            )
+    async def _analyze_generator():
+        q: asyncio.Queue[Dict[str, Any]] = asyncio.Queue()
 
-    # 1 + 2. Fetch both videos in parallel — cuts wait time roughly in half
-    #         (yt-dlp is network-bound; both can wait on the network simultaneously)
-    data_a, data_b = await asyncio.gather(
-        _ingest(url_a, "Video A"),
-        _ingest(url_b, "Video B"),
-    )
+        async def _ingest(url: str, label: str):
+            """Fetch one video — checks cache first, then runs yt-dlp in a thread."""
+            await q.put({"type": "progress", "message": f"Downloading {label}..."})
+            cached = video_cache.get(url)
+            if cached:
+                await q.put({"type": "progress", "message": f"{label} loaded from cache."})
+                return cached
+            try:
+                ingestor = get_ingestor_for_url(url)
+                data = await asyncio.to_thread(ingestor.ingest, url)
+                video_cache.set(url, data)
+                await q.put({"type": "progress", "message": f"{label} downloaded successfully."})
+                return data
+            except Exception as e:
+                await q.put({"type": "error", "message": f"Failed to ingest {label}: {str(e)}"})
+                raise e
 
-    # 3. Index both transcripts in parallel — same benefit for embedding API calls
-    try:
-        await asyncio.gather(
-            asyncio.to_thread(vector_store.index_transcript, data_a["video_id"], data_a["transcript"]),
-            asyncio.to_thread(vector_store.index_transcript, data_b["video_id"], data_b["transcript"]),
-        )
-    except Exception as e:
-        import logging
-        logging.getLogger(__name__).warning(f"Vector indexing error: {e}")
+        async def _index(data: dict, label: str):
+            await q.put({"type": "progress", "message": f"Indexing {label} into vector store..."})
+            await asyncio.to_thread(vector_store.index_transcript, data["video_id"], data["transcript"])
+            await q.put({"type": "progress", "message": f"{label} indexed successfully."})
 
-    # 4. Initialize LangGraph Session & Hook Audit (blocking LLM call — run in thread)
-    try:
-        session_result = await asyncio.to_thread(initialize_session, session_id, data_a, data_b)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to initialize LangGraph agent session: {str(e)}")
+        async def _run_analysis():
+            try:
+                # 1 + 2. Fetch both videos in parallel
+                data_a, data_b = await asyncio.gather(
+                    _ingest(url_a, "Video A"),
+                    _ingest(url_b, "Video B"),
+                )
 
-    return {
-        "video_a": {
-            "video_id": data_a["video_id"],
-            "platform": data_a["platform"],
-            "title": data_a["title"],
-            "metrics": data_a["metrics"],
-            "engagement_rate": data_a["engagement_rate"],
-            "whisper_stubbed": data_a.get("whisper_stubbed", False),
-            "is_estimated_views": data_a.get("is_estimated_views", False),
-        },
-        "video_b": {
-            "video_id": data_b["video_id"],
-            "platform": data_b["platform"],
-            "title": data_b["title"],
-            "metrics": data_b["metrics"],
-            "engagement_rate": data_b["engagement_rate"],
-            "whisper_stubbed": data_b.get("whisper_stubbed", False),
-            "is_estimated_views": data_b.get("is_estimated_views", False),
-        },
-        "hook_analysis": session_result["hook_analysis"],
-        "is_mock_analysis": session_result.get("is_mock_analysis", False),
-        "chat_history": session_result["messages"]
-    }
+                # 3. Index both transcripts in parallel
+                try:
+                    await asyncio.gather(
+                        _index(data_a, "Video A"),
+                        _index(data_b, "Video B"),
+                    )
+                except Exception as e:
+                    import logging
+                    logging.getLogger(__name__).warning(f"Vector indexing error: {e}")
+                    await q.put({"type": "progress", "message": f"Warning: Vector indexing error: {e}"})
+
+                # 4. Initialize LangGraph Session & Hook Audit
+                await q.put({"type": "progress", "message": "Assembling RAG Context & Generating Hook Audit..."})
+                session_result = await asyncio.to_thread(initialize_session, session_id, data_a, data_b)
+                
+                await q.put({"type": "complete", "data": {
+                    "video_a": {
+                        "video_id": data_a["video_id"],
+                        "platform": data_a["platform"],
+                        "title": data_a["title"],
+                        "metrics": data_a["metrics"],
+                        "engagement_rate": data_a["engagement_rate"],
+                        "whisper_stubbed": data_a.get("whisper_stubbed", False),
+                        "is_estimated_views": data_a.get("is_estimated_views", False),
+                    },
+                    "video_b": {
+                        "video_id": data_b["video_id"],
+                        "platform": data_b["platform"],
+                        "title": data_b["title"],
+                        "metrics": data_b["metrics"],
+                        "engagement_rate": data_b["engagement_rate"],
+                        "whisper_stubbed": data_b.get("whisper_stubbed", False),
+                        "is_estimated_views": data_b.get("is_estimated_views", False),
+                    },
+                    "hook_analysis": session_result["hook_analysis"],
+                    "is_mock_analysis": session_result.get("is_mock_analysis", False),
+                    "chat_history": session_result["messages"]
+                }})
+            except Exception as e:
+                # If an error wasn't already caught and queued, catch it here
+                await q.put({"type": "error", "message": str(e)})
+
+        # Start the background task
+        task = asyncio.create_task(_run_analysis())
+
+        while True:
+            # Yield items from the queue as they come in
+            msg = await q.get()
+            import json
+            yield dict(data=json.dumps(msg))
+            
+            if msg["type"] in ["complete", "error"]:
+                break
+                
+        # ensure the task finishes cleanly
+        await task
+
+    return EventSourceResponse(_analyze_generator())
 
 @app.post("/chat/stream")
 async def chat_stream(req: ChatRequest):

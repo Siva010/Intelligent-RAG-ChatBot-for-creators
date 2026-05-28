@@ -23,6 +23,7 @@ export default function Home() {
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [chatInput, setChatInput] = useState('');
   const [isChatLoading, setIsChatLoading] = useState(false);
+  const [loadingStep, setLoadingStep] = useState<string>('Scraping & Indexing Video Transcripts...');
 
   // Generate a unique session ID on component mount, persisted in sessionStorage
   // so that rapid re-mounts within the same tab don't orphan LangGraph sessions.
@@ -45,6 +46,7 @@ export default function Home() {
     }
 
     setIsLoading(true);
+    setLoadingStep('Initializing connection...');
     setError(null);
     setVideoA(null);
     setVideoB(null);
@@ -69,20 +71,58 @@ export default function Home() {
         throw new Error(errData.detail || 'Failed to analyze videos. Check backend logs.');
       }
 
-      const data = await response.json();
-      setVideoA(data.video_a);
-      setVideoB(data.video_b);
-      setIsMockAnalysis(data.is_mock_analysis || false);
-      
-      // Load initial chat messages from backend (which includes the hook audit)
-      if (data.chat_history) {
-        setChatMessages(data.chat_history);
+      if (!response.body) {
+        throw new Error('ReadableStream not yet supported in this browser.');
+      }
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder('utf-8');
+
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+
+        const chunkText = decoder.decode(value, { stream: true });
+        const lines = chunkText.split('\n');
+
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            const dataStr = line.slice(6).trim();
+            if (dataStr === '[DONE]') {
+              continue;
+            }
+            try {
+              const msg = JSON.parse(dataStr);
+              if (msg.type === 'progress') {
+                setLoadingStep(msg.message);
+              } else if (msg.type === 'complete') {
+                setVideoA(msg.data.video_a);
+                setVideoB(msg.data.video_b);
+                setIsMockAnalysis(msg.data.is_mock_analysis || false);
+                
+                if (msg.data.chat_history) {
+                  setChatMessages(msg.data.chat_history);
+                }
+              } else if (msg.type === 'error') {
+                throw new Error(msg.message);
+              }
+            } catch (e: any) {
+              if (e instanceof SyntaxError) {
+                // partial chunk or weird spacing, wait for next buffer (handled simply here)
+                // for this demo we assume small payloads that don't chunk over lines
+              } else {
+                throw e;
+              }
+            }
+          }
+        }
       }
     } catch (err: any) {
       console.error("Ingestion failed: ", err);
       setError(err.message || 'An unexpected error occurred.');
     } finally {
       setIsLoading(false);
+      setLoadingStep('Scraping & Indexing Video Transcripts...');
     }
   };
 
@@ -261,7 +301,7 @@ export default function Home() {
               {isLoading ? (
                 <>
                   <RefreshCw className="w-4 h-4 animate-spin" />
-                  Scraping & Indexing Video Transcripts...
+                  {loadingStep}
                 </>
               ) : (
                 <>
