@@ -33,7 +33,7 @@ def _get_llm(temperature: float = 0.15):
     """Returns a configured Gemini LLM instance."""
     from langchain_google_genai import ChatGoogleGenerativeAI
     return ChatGoogleGenerativeAI(
-        model="gemini-2.5-flash-lite",
+        model="gemini-2.5-flash",
         google_api_key=settings.google_api_key,
         temperature=temperature,
         # Larger context window means we can pass more transcript chunks
@@ -444,8 +444,8 @@ def send_chat_message(session_id: str, message: str) -> Dict[str, Any]:
 async def stream_chat_message_sse(session_id: str, message: str):
     """
     Async generator that yields the AI response token-by-token for SSE streaming.
-    Uses LangGraph's native astream() with stream_mode="messages" to capture
-    true LLM output chunks as they are generated.
+    Uses LangGraph's native astream_events (v2) to capture true LLM output chunks 
+    safely across different LangGraph versions.
     """
     config = {"configurable": {"thread_id": session_id}}
     
@@ -457,12 +457,15 @@ async def stream_chat_message_sse(session_id: str, message: str):
         
     try:
         inputs = {"messages": [HumanMessage(content=message)]}
-        # stream_mode="messages" yields (message_chunk, metadata) tuples from nodes
-        async for chunk, metadata in agent_graph.astream(inputs, config=config, stream_mode="messages"):
-            # Only stream chunks that originate from our chat_assistant node
-            if metadata.get("langgraph_node") == "chat_assistant":
-                if hasattr(chunk, "content") and chunk.content:
-                    yield dict(data=json.dumps({"chunk": chunk.content}))
+        
+        # astream_events is the safest way to extract streaming chunks in LangChain/LangGraph
+        async for event in agent_graph.astream_events(inputs, config=config, version="v2"):
+            kind = event["event"]
+            if kind == "on_chat_model_stream":
+                chunk_content = event["data"]["chunk"].content
+                if chunk_content and isinstance(chunk_content, str):
+                    yield dict(data=json.dumps({"chunk": chunk_content}))
+                    
     except Exception as e:
         logger.error(f"Error in stream_chat_message_sse: {e}")
         yield dict(data=json.dumps({"chunk": f"**Error:** {str(e)} "}))
