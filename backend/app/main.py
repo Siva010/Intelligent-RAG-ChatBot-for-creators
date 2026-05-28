@@ -53,34 +53,36 @@ async def analyze_videos(req: AnalyzeRequest):
     if not url_a or not url_b:
         raise HTTPException(status_code=400, detail="Both video URLs are required.")
 
-    # 1. Fetch Video A (Check cache first)
-    data_a = video_cache.get(url_a)
-    if not data_a:
+    async def _ingest(url: str, label: str):
+        """Fetch one video — checks cache first, then runs yt-dlp in a thread."""
+        cached = video_cache.get(url)
+        if cached:
+            return cached
         try:
-            ingestor_a = get_ingestor_for_url(url_a)
-            # Run blocking yt-dlp I/O in a thread so the event loop is not blocked
-            data_a = await asyncio.to_thread(ingestor_a.ingest, url_a)
-            video_cache.set(url_a, data_a)
+            ingestor = get_ingestor_for_url(url)
+            data = await asyncio.to_thread(ingestor.ingest, url)
+            video_cache.set(url, data)
+            return data
         except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Failed to ingest Video A: {str(e)}")
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to ingest {label}: {str(e)}"
+            )
 
-    # 2. Fetch Video B (Check cache first)
-    data_b = video_cache.get(url_b)
-    if not data_b:
-        try:
-            ingestor_b = get_ingestor_for_url(url_b)
-            # Run blocking yt-dlp I/O in a thread so the event loop is not blocked
-            data_b = await asyncio.to_thread(ingestor_b.ingest, url_b)
-            video_cache.set(url_b, data_b)
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Failed to ingest Video B: {str(e)}")
+    # 1 + 2. Fetch both videos in parallel — cuts wait time roughly in half
+    #         (yt-dlp is network-bound; both can wait on the network simultaneously)
+    data_a, data_b = await asyncio.gather(
+        _ingest(url_a, "Video A"),
+        _ingest(url_b, "Video B"),
+    )
 
-    # 3. Index transcripts in Vector DB (blocking embedding API calls — run in thread)
+    # 3. Index both transcripts in parallel — same benefit for embedding API calls
     try:
-        await asyncio.to_thread(vector_store.index_transcript, data_a["video_id"], data_a["transcript"])
-        await asyncio.to_thread(vector_store.index_transcript, data_b["video_id"], data_b["transcript"])
+        await asyncio.gather(
+            asyncio.to_thread(vector_store.index_transcript, data_a["video_id"], data_a["transcript"]),
+            asyncio.to_thread(vector_store.index_transcript, data_b["video_id"], data_b["transcript"]),
+        )
     except Exception as e:
-        # Log error and continue to keep app operational
         import logging
         logging.getLogger(__name__).warning(f"Vector indexing error: {e}")
 
