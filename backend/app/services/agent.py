@@ -33,7 +33,7 @@ def _get_llm(temperature: float = 0.15):
     """Returns a configured Gemini LLM instance."""
     from langchain_google_genai import ChatGoogleGenerativeAI
     return ChatGoogleGenerativeAI(
-        model="gemini-2.5-flash",
+        model="gemini-2.5-flash-lite",
         google_api_key=settings.google_api_key,
         temperature=temperature,
         # Larger context window means we can pass more transcript chunks
@@ -233,18 +233,61 @@ def retrieve_relevant_segments(query: str, state: AgentState, n_results: int = 6
     return "\n\n---\n\n".join(context_parts)
 
 
+from langchain_core.runnables import RunnableConfig
+
+async def _astream_llm_with_retry(
+    messages: List[BaseMessage],
+    config: RunnableConfig,
+    temperature: float = 0.15,
+    max_attempts: int = 2,
+) -> BaseMessage | None:
+    """
+    Async streaming invocation of the LLM. 
+    Yields chunks to LangGraph via the RunnableConfig.
+    """
+    if not settings.google_api_key:
+        return None
+
+    import asyncio
+
+    for attempt in range(max_attempts):
+        try:
+            llm = _get_llm(temperature)
+            response_msg = None
+            async for chunk in llm.astream(messages, config=config):
+                if response_msg is None:
+                    response_msg = chunk
+                else:
+                    response_msg += chunk
+            return response_msg
+        except Exception as e:
+            err_str = str(e)
+            logger.warning(f"LLM streaming attempt {attempt + 1}/{max_attempts} failed: {e}")
+            if "429" in err_str and attempt < max_attempts - 1:
+                delay_match = _re.search(r"retryDelay.*?'(\d+)s'", err_str)
+                wait = int(delay_match.group(1)) if delay_match else 55
+                wait = min(wait, 65)
+                logger.info(f"Rate limited — waiting {wait}s before retry...")
+                await asyncio.sleep(wait)
+            else:
+                logger.error(f"LLM streaming failed permanently: {e}")
+                return None
+
+    return None
+
 # ---------------------------------------------------------------------------
 # Node 3: Chat Assistant (RAG-powered)
 # ---------------------------------------------------------------------------
-def chat_assistant_node(state: AgentState) -> Dict[str, Any]:
+async def chat_assistant_node(state: AgentState, config: RunnableConfig) -> Dict[str, Any]:
     logger.info("LangGraph: chat_assistant node")
     messages = state["messages"]
 
     user_msg = [m for m in messages if isinstance(m, HumanMessage)][-1]
     query = extract_text(user_msg.content)
 
-    # Step 1: Retrieve semantically relevant transcript chunks
-    retrieved_context = retrieve_relevant_segments(query, state, n_results=6)
+    import asyncio
+    # Step 1: Retrieve semantically relevant transcript chunks (blocking call in thread)
+    retrieved_context = await asyncio.to_thread(retrieve_relevant_segments, query, state, 6)
 
     # Step 2: Build enriched system prompt with retrieved context injected
     base_system_content = extract_text(messages[0].content) if messages else format_system_prompt(
@@ -279,10 +322,10 @@ Always cite using the exact format shown (e.g., `[Video A @ 01:24]`).
         llm_messages.append(m)
 
     # Step 4: Call LLM
-    reply = _invoke_llm_with_retry(llm_messages, temperature=0.15)
+    reply_msg = await _astream_llm_with_retry(llm_messages, config, temperature=0.15)
 
-    if reply:
-        return {"messages": [AIMessage(content=reply)]}
+    if reply_msg:
+        return {"messages": [reply_msg]}
 
     # Graceful mock fallback if LLM is completely unavailable
     mock_reply = _generate_mock_chat_response(query, state, retrieved_context)
@@ -400,26 +443,28 @@ def send_chat_message(session_id: str, message: str) -> Dict[str, Any]:
 
 async def stream_chat_message_sse(session_id: str, message: str):
     """
-    Async generator that yields the AI response word-by-word for SSE streaming.
-    send_chat_message is a blocking sync function (LLM + LangGraph), so we run
-    it in a thread pool via asyncio.to_thread() to avoid blocking the event loop.
+    Async generator that yields the AI response token-by-token for SSE streaming.
+    Uses LangGraph's native astream() with stream_mode="messages" to capture
+    true LLM output chunks as they are generated.
     """
-    import asyncio
-
-    try:
-        # Offload the blocking LLM call to a thread so the event loop stays free
-        res = await asyncio.to_thread(send_chat_message, session_id, message)
-        reply = res["reply"]
-    except Exception as e:
-        logger.error(f"Error in send_chat_message: {e}")
-        yield dict(data=json.dumps({"chunk": f"**Error:** {str(e)} "}))
+    config = {"configurable": {"thread_id": session_id}}
+    
+    state_info = agent_graph.get_state(config)
+    if not state_info or not state_info.values:
+        yield dict(data=json.dumps({"chunk": "**Error:** Session not found. Call /analyze first. "}))
         yield dict(data="[DONE]")
         return
-
-    # Stream word-by-word to simulate real streaming UX
-    words = reply.split(" ")
-    for word in words:
-        yield dict(data=json.dumps({"chunk": word + " "}))
-        await asyncio.sleep(0.035)
-
+        
+    try:
+        inputs = {"messages": [HumanMessage(content=message)]}
+        # stream_mode="messages" yields (message_chunk, metadata) tuples from nodes
+        async for chunk, metadata in agent_graph.astream(inputs, config=config, stream_mode="messages"):
+            # Only stream chunks that originate from our chat_assistant node
+            if metadata.get("langgraph_node") == "chat_assistant":
+                if hasattr(chunk, "content") and chunk.content:
+                    yield dict(data=json.dumps({"chunk": chunk.content}))
+    except Exception as e:
+        logger.error(f"Error in stream_chat_message_sse: {e}")
+        yield dict(data=json.dumps({"chunk": f"**Error:** {str(e)} "}))
+        
     yield dict(data="[DONE]")
