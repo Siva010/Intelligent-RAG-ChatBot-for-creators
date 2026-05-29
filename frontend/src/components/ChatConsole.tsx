@@ -117,9 +117,12 @@ export default function ChatConsole({
       <ReactMarkdown
         components={{
           p: ({ children }) => (
-            <p className="mb-3 last:mb-0 leading-relaxed text-zinc-300 text-sm">
+            <p className="mb-4 last:mb-0 leading-relaxed text-zinc-300 text-sm whitespace-pre-wrap">
               {processCitationsInNode(children, 'p')}
             </p>
+          ),
+          strong: ({ children }) => (
+            <strong className="font-bold text-zinc-100">{children}</strong>
           ),
           li: ({ children }) => (
             <li className="leading-relaxed text-zinc-300 text-sm">
