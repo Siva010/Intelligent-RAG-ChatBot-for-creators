@@ -119,6 +119,7 @@ async def analyze_videos(req: AnalyzeRequest):
                         "metrics": data_a["metrics"],
                         "engagement_rate": data_a["engagement_rate"],
                         "whisper_stubbed": data_a.get("whisper_stubbed", False),
+                        "asr_method": data_a.get("asr_method", "none"),
                         "is_estimated_views": data_a.get("is_estimated_views", False),
                     },
                     "video_b": {
@@ -133,6 +134,7 @@ async def analyze_videos(req: AnalyzeRequest):
                         "metrics": data_b["metrics"],
                         "engagement_rate": data_b["engagement_rate"],
                         "whisper_stubbed": data_b.get("whisper_stubbed", False),
+                        "asr_method": data_b.get("asr_method", "none"),
                         "is_estimated_views": data_b.get("is_estimated_views", False),
                     },
                     "hook_analysis": session_meta.get("hook_analysis", ""),

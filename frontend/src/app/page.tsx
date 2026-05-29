@@ -372,18 +372,23 @@ export default function Home() {
                       <div className="p-5 rounded-2xl bg-[#09111E] border border-white/5">
                         <h4 className="text-[10px] font-black text-emerald-400 mb-2 uppercase tracking-widest">Scraper Integrity</h4>
                         <div className="flex flex-col gap-2 mt-2">
-                          <div className="flex justify-between text-xs">
-                            <span className="text-zinc-500">Video A Captions:</span>
-                            <span className={videoA?.whisper_stubbed ? 'text-amber-400 font-medium' : 'text-emerald-400 font-medium'}>
-                              {videoA?.whisper_stubbed ? 'Whisper Mocked' : 'Scraped Successfully'}
-                            </span>
-                          </div>
-                          <div className="flex justify-between text-xs">
-                            <span className="text-zinc-500">Video B Captions:</span>
-                            <span className={videoB?.whisper_stubbed ? 'text-amber-400 font-medium' : 'text-emerald-400 font-medium'}>
-                              {videoB?.whisper_stubbed ? 'Whisper Mocked' : 'Scraped Successfully'}
-                            </span>
-                          </div>
+                          {[{ label: 'Video A', data: videoA }, { label: 'Video B', data: videoB }].map(({ label, data }) => {
+                            const getStatus = () => {
+                              if (!data) return { text: '—', cls: 'text-zinc-500' };
+                              if (data.whisper_stubbed) return { text: 'Caption Fallback', cls: 'text-amber-400 font-medium' };
+                              if (data.asr_method === 'whisper') return { text: '✓ Whisper ASR', cls: 'text-violet-400 font-medium' };
+                              if (data.asr_method === 'gemini') return { text: '✓ Gemini ASR', cls: 'text-sky-400 font-medium' };
+                              if (data.asr_method === 'youtube_captions') return { text: '✓ YouTube Captions', cls: 'text-emerald-400 font-medium' };
+                              return { text: '✓ Scraped', cls: 'text-emerald-400 font-medium' };
+                            };
+                            const status = getStatus();
+                            return (
+                              <div key={label} className="flex justify-between text-xs">
+                                <span className="text-zinc-500">{label} Captions:</span>
+                                <span className={status.cls}>{status.text}</span>
+                              </div>
+                            );
+                          })}
                         </div>
                       </div>
                     </div>

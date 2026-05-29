@@ -382,7 +382,7 @@ Based on the retrieved context{cite_str}:
 
 {context[:600]}{'...' if len(context) > 600 else ''}
 
-> ⚠️ *Note: The LLM is currently unavailable (no API key configured). This is a raw context dump. Set a `GOOGLE_API_KEY` in your `.env` file for AI-generated analysis.*
+> ⚠️ *Note: The AI analysis engine is currently experiencing high demand. Showing raw extracted context instead.*
 """
 
 

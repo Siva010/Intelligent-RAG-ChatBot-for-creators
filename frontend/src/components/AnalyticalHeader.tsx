@@ -20,6 +20,7 @@ export interface VideoData {
   metrics: VideoMetrics;
   engagement_rate: number;
   whisper_stubbed?: boolean;
+  asr_method?: string;
   is_estimated_views?: boolean;
   transcript?: Array<{ text: string; start: number; duration: number }>;
 }
@@ -107,7 +108,17 @@ export default function AnalyticalHeader({ videoA, videoB }: AnalyticalHeaderPro
           </span>
           {data.whisper_stubbed && (
             <span className="absolute top-3 right-3 px-2 py-0.5 text-[10px] font-medium bg-amber-500/80 text-zinc-900 rounded">
-              {data.platform === 'youtube' ? 'No Transcript' : 'Caption Fallback'}
+              Caption Fallback
+            </span>
+          )}
+          {!data.whisper_stubbed && data.asr_method === 'whisper' && (
+            <span className="absolute top-3 right-3 px-2 py-0.5 text-[10px] font-medium bg-violet-500/80 text-white rounded">
+              Whisper ASR
+            </span>
+          )}
+          {!data.whisper_stubbed && data.asr_method === 'gemini' && (
+            <span className="absolute top-3 right-3 px-2 py-0.5 text-[10px] font-medium bg-sky-500/80 text-white rounded">
+              Gemini ASR
             </span>
           )}
         </div>
