@@ -168,38 +168,11 @@ export default function ChatConsole({
                 Ingest two videos above, then tap a question or type your own.
               </p>
             </div>
-            {/* Quick prompt chips */}
-            {!disabled && (
-              <div className="flex flex-col gap-2 w-full">
-                <div className="flex items-center gap-1.5 justify-center mb-1">
-                  <Zap className="w-3 h-3 text-sky-400" />
-                  <span className="text-[10px] font-black uppercase tracking-widest text-sky-400">Quick Prompts</span>
-                </div>
-                {dynamicPrompts.map((prompt, i) => (
-                  <button
-                    key={i}
-                    onClick={() => {
-                      setInput(prompt);
-                      // fire immediately via a synthetic form submit
-                      const evt = { preventDefault: () => { } } as React.FormEvent;
-                      // slight delay so state update can flush
-                      setTimeout(() => {
-                        setInput(prompt);
-                        const form = document.getElementById('chat-form') as HTMLFormElement | null;
-                        if (form) form.requestSubmit();
-                      }, 50);
-                    }}
-                    disabled={isLoading}
-                    className="text-left w-full px-3 py-2.5 rounded-xl bg-zinc-900/60 border border-zinc-800 hover:border-sky-500/40 hover:bg-zinc-900 text-xs text-zinc-300 hover:text-white transition-all disabled:opacity-40 disabled:cursor-not-allowed"
-                  >
-                    {prompt}
-                  </button>
-                ))}
-              </div>
-            )}
           </div>
         ) : (
-          messages.map((msg, idx) => (
+          messages
+            .filter(msg => msg.content !== "Start Comparative Analysis Audit")
+            .map((msg, idx) => (
             <div
               key={idx}
               className={`flex gap-4 max-w-3xl animate-slide-up ${msg.role === 'user' ? 'ml-auto flex-row-reverse' : ''
@@ -226,6 +199,36 @@ export default function ChatConsole({
               </div>
             </div>
           ))
+        )}
+
+        {/* Quick prompt chips - shown when chat is empty or just has the initial audit */}
+        {messages.length <= 2 && !disabled && (
+          <div className="flex flex-col gap-2 w-full max-w-3xl animate-fade-in-up delay-300">
+            <div className="flex items-center gap-1.5 justify-center mb-2 mt-4">
+              <Zap className="w-3 h-3 text-sky-400" />
+              <span className="text-[10px] font-black uppercase tracking-widest text-sky-400">Quick Prompts</span>
+            </div>
+            <div className="flex flex-wrap justify-center gap-2">
+              {dynamicPrompts.map((prompt, i) => (
+                <button
+                  key={i}
+                  onClick={() => {
+                    setInput(prompt);
+                    // slight delay so state update can flush before submit
+                    setTimeout(() => {
+                      setInput(prompt);
+                      const form = document.getElementById('chat-form') as HTMLFormElement | null;
+                      if (form) form.requestSubmit();
+                    }, 50);
+                  }}
+                  disabled={isLoading}
+                  className="text-left flex-1 min-w-[250px] px-3 py-2.5 rounded-xl bg-zinc-900/60 border border-zinc-800 hover:border-sky-500/40 hover:bg-zinc-900 text-xs text-zinc-300 hover:text-white transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  {prompt}
+                </button>
+              ))}
+            </div>
+          </div>
         )}
 
         {isLoading && (
