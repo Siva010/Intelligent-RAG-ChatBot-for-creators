@@ -400,6 +400,8 @@ export default function Home() {
                   onSendMessage={handleSendMessage}
                   isLoading={isChatLoading}
                   disabled={!videoA || !videoB}
+                  videoA={videoA}
+                  videoB={videoB}
                 />
               </div>
             </div>

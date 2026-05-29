@@ -1,6 +1,7 @@
 import React, { useRef, useEffect } from 'react';
 import { Send, Bot, User, Loader2, PlayCircle, Zap } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
+import { VideoData } from './AnalyticalHeader';
 
 export interface ChatMessage {
   role: 'user' | 'assistant';
@@ -14,15 +15,9 @@ interface ChatConsoleProps {
   onSendMessage: (e: React.FormEvent) => void;
   isLoading: boolean;
   disabled: boolean;
+  videoA?: VideoData | null;
+  videoB?: VideoData | null;
 }
-
-const QUICK_PROMPTS = [
-  "Why did Video A get more engagement than Video B?",
-  "What's the engagement rate of each video?",
-  "Compare the hooks in the first 5 seconds.",
-  "Who's the creator of Video B and what's their follower count?",
-  "Suggest improvements for B based on what worked in A.",
-];
 
 export default function ChatConsole({
   messages,
@@ -30,13 +25,28 @@ export default function ChatConsole({
   setInput,
   onSendMessage,
   isLoading,
-  disabled
+  disabled,
+  videoA,
+  videoB
 }: ChatConsoleProps) {
   const chatEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, isLoading]);
+
+  const engA = videoA?.engagement_rate || 0;
+  const engB = videoB?.engagement_rate || 0;
+  const winner = engA >= engB ? 'Video A' : 'Video B';
+  const loser = engA >= engB ? 'Video B' : 'Video A';
+
+  const dynamicPrompts = [
+    `Why did ${winner} get more engagement than ${loser}?`,
+    "What's the engagement rate of each video?",
+    "Compare the hooks in the first 5 seconds.",
+    `Who's the creator of ${loser} and what's their follower count?`,
+    `Suggest improvements for ${loser} based on what worked in ${winner}.`,
+  ];
 
   // Recursively process React node tree, replacing citation text with styled badges.
   // This handles citations that appear inside bold, italic, code, or other inline elements.
@@ -158,7 +168,35 @@ export default function ChatConsole({
                 Ingest two videos above, then tap a question or type your own.
               </p>
             </div>
-            {/* Quick prompt chips removed per request */}
+            {/* Quick prompt chips */}
+            {!disabled && (
+              <div className="flex flex-col gap-2 w-full">
+                <div className="flex items-center gap-1.5 justify-center mb-1">
+                  <Zap className="w-3 h-3 text-sky-400" />
+                  <span className="text-[10px] font-black uppercase tracking-widest text-sky-400">Quick Prompts</span>
+                </div>
+                {dynamicPrompts.map((prompt, i) => (
+                  <button
+                    key={i}
+                    onClick={() => {
+                      setInput(prompt);
+                      // fire immediately via a synthetic form submit
+                      const evt = { preventDefault: () => { } } as React.FormEvent;
+                      // slight delay so state update can flush
+                      setTimeout(() => {
+                        setInput(prompt);
+                        const form = document.getElementById('chat-form') as HTMLFormElement | null;
+                        if (form) form.requestSubmit();
+                      }, 50);
+                    }}
+                    disabled={isLoading}
+                    className="text-left w-full px-3 py-2.5 rounded-xl bg-zinc-900/60 border border-zinc-800 hover:border-sky-500/40 hover:bg-zinc-900 text-xs text-zinc-300 hover:text-white transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    {prompt}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
         ) : (
           messages.map((msg, idx) => (
