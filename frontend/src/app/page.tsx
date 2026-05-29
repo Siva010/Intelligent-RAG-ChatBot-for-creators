@@ -78,7 +78,7 @@ export default function Home() {
       const reader = response.body.getReader();
       const decoder = new TextDecoder('utf-8');
       let sseBuffer = '';
-
+      let hookAccum = '';
       while (true) {
         const { value, done } = await reader.read();
         if (done) break;
@@ -95,11 +95,22 @@ export default function Home() {
             const msg = JSON.parse(dataStr);
             if (msg.type === 'progress') {
               setLoadingStep(msg.message);
+            } else if (msg.type === 'hook_chunk') {
+              // Stream hook analysis into the chat message by message
+              hookAccum += msg.chunk;
+              setChatMessages(prev => {
+                if (prev.length > 0 && prev[prev.length - 1].role === 'assistant') {
+                  const updated = [...prev];
+                  updated[updated.length - 1] = { role: 'assistant', content: hookAccum };
+                  return updated;
+                }
+                return [...prev, { role: 'assistant', content: hookAccum }];
+              });
             } else if (msg.type === 'complete') {
               setVideoA(msg.data.video_a);
               setVideoB(msg.data.video_b);
               setIsMockAnalysis(msg.data.is_mock_analysis || false);
-              if (msg.data.chat_history) {
+              if (msg.data.chat_history && msg.data.chat_history.length > 0) {
                 setChatMessages(msg.data.chat_history);
               }
             } else if (msg.type === 'error') {

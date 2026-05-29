@@ -9,7 +9,7 @@ from app.config import settings
 from app.services.ingestion import get_ingestor_for_url
 from app.services.cache import video_cache
 from app.services.vector_store import vector_store
-from app.services.agent import initialize_session, stream_chat_message_sse
+from app.services.agent import astream_session, stream_chat_message_sse
 from app.services.channel_analytics import generate_mock_channel_analytics
 
 app = FastAPI(
@@ -97,10 +97,15 @@ async def analyze_videos(req: AnalyzeRequest):
                     logging.getLogger(__name__).warning(f"Vector indexing error: {e}")
                     await q.put({"type": "progress", "message": f"Warning: Vector indexing error: {e}"})
 
-                # 4. Initialize LangGraph Session & Hook Audit
+                # 4. Initialize LangGraph Session & Hook Audit (streaming)
                 await q.put({"type": "progress", "message": "Assembling RAG Context & Generating Hook Audit..."})
-                session_result = await initialize_session(session_id, data_a, data_b)
-                
+                session_meta: Dict[str, Any] = {}
+                async for evt_type, payload in astream_session(session_id, data_a, data_b):
+                    if evt_type == "hook_chunk":
+                        await q.put({"type": "hook_chunk", "chunk": payload})
+                    elif evt_type == "done":
+                        session_meta = payload
+
                 await q.put({"type": "complete", "data": {
                     "video_a": {
                         "video_id": data_a["video_id"],
@@ -130,9 +135,9 @@ async def analyze_videos(req: AnalyzeRequest):
                         "whisper_stubbed": data_b.get("whisper_stubbed", False),
                         "is_estimated_views": data_b.get("is_estimated_views", False),
                     },
-                    "hook_analysis": session_result["hook_analysis"],
-                    "is_mock_analysis": session_result.get("is_mock_analysis", False),
-                    "chat_history": session_result["messages"]
+                    "hook_analysis": session_meta.get("hook_analysis", ""),
+                    "is_mock_analysis": session_meta.get("is_mock_analysis", False),
+                    "chat_history": session_meta.get("chat_history", [])
                 }})
             except Exception as e:
                 # If an error wasn't already caught and queued, catch it here

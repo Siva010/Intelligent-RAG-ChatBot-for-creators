@@ -443,6 +443,69 @@ async def initialize_session(
     }
 
 
+async def astream_session(
+    session_id: str, video_a: Dict[str, Any], video_b: Dict[str, Any]
+):
+    """
+    Async generator that streams the initial hook audit token-by-token.
+
+    Yields tuples:
+      ("hook_chunk", str)      — one LLM token at a time
+      ("done",       dict)     — final session metadata after streaming completes
+
+    Using astream_events lets the hook analysis appear in the chat as it's generated,
+    satisfying the spec requirement that all responses must stream.
+    """
+    config = {"configurable": {"thread_id": session_id}}
+    initial_state = {
+        "messages": [HumanMessage(content="Start Comparative Analysis Audit")],
+        "video_a": video_a,
+        "video_b": video_b,
+        "hook_analysis": "",
+        "is_mock_analysis": False,
+        "session_id": session_id,
+    }
+
+    # Yield the section header immediately so the chat feels responsive
+    header = "### Initial Hook Audit & Diagnostics\n\n"
+    yield ("hook_chunk", header)
+
+    emitted_any = False
+    async for event in agent_graph.astream_events(initial_state, config=config, version="v2"):
+        kind = event["event"]
+        if kind == "on_chat_model_stream":
+            token = event["data"]["chunk"].content
+            if token and isinstance(token, str):
+                emitted_any = True
+                yield ("hook_chunk", token)
+
+    # Collect final state for the complete event
+    final = agent_graph.get_state(config)
+    hook_analysis = ""
+    is_mock = False
+    chat_history: List[Dict[str, str]] = []
+
+    if final and final.values:
+        hook_analysis = final.values.get("hook_analysis", "")
+        is_mock = final.values.get("is_mock_analysis", False)
+        for m in final.values.get("messages", []):
+            if m.type in ("human", "ai"):
+                chat_history.append({
+                    "role": "user" if m.type == "human" else "assistant",
+                    "content": extract_text(m.content),
+                })
+
+    # If no tokens streamed (LLM unavailable → mock path), flush the mock text at once
+    if not emitted_any and hook_analysis:
+        yield ("hook_chunk", hook_analysis)
+
+    yield ("done", {
+        "hook_analysis": hook_analysis,
+        "is_mock_analysis": is_mock,
+        "chat_history": chat_history,
+    })
+
+
 def send_chat_message(session_id: str, message: str) -> Dict[str, Any]:
     """
     Sends a new user turn and retrieves the AI response.
