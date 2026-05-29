@@ -33,7 +33,7 @@ def _get_llm(temperature: float = 0.15):
     """Returns a configured Gemini LLM instance."""
     from langchain_google_genai import ChatGoogleGenerativeAI
     return ChatGoogleGenerativeAI(
-        model="gemini-1.5-flash-latest",
+        model="gemini-2.5-flash",
         google_api_key=settings.google_api_key,
         temperature=temperature,
         # Larger context window means we can pass more transcript chunks
@@ -89,11 +89,25 @@ class AgentState(TypedDict):
 # ---------------------------------------------------------------------------
 # System Prompt Builder
 # ---------------------------------------------------------------------------
+def _fmt_followers(count: int) -> str:
+    """Format follower count to human-readable string."""
+    if count == 0:
+        return "N/A (not publicly available)"
+    if count >= 1_000_000:
+        return f"{count / 1_000_000:.1f}M"
+    if count >= 1_000:
+        return f"{count / 1_000:.1f}K"
+    return str(count)
+
+
 def format_system_prompt(video_a: Dict[str, Any], video_b: Dict[str, Any]) -> str:
     metrics_a = video_a.get("metrics", {})
     metrics_b = video_b.get("metrics", {})
     hook_a = vector_store.isolate_hooks(video_a.get("transcript", []))
     hook_b = vector_store.isolate_hooks(video_b.get("transcript", []))
+
+    hashtags_a = ", ".join(video_a.get("hashtags", [])[:5]) or "None"
+    hashtags_b = ", ".join(video_b.get("hashtags", [])[:5]) or "None"
 
     return f"""## ROLE
 You are an elite YouTube script doctor, storytelling strategist, and data analyst.
@@ -107,14 +121,24 @@ You speak like a seasoned creative director: direct, punchy, and highly actionab
 ### Video A (Control)
 - **Title**: "{video_a.get('title')}"
 - **Platform**: {video_a.get('platform')}
+- **Creator**: {video_a.get('creator', 'Unknown')}
+- **Followers / Subscribers**: {_fmt_followers(video_a.get('follower_count', 0))}
+- **Upload Date**: {video_a.get('upload_date', 'Unknown')}
+- **Hashtags**: {hashtags_a}
 - **Views**: {metrics_a.get('views', 0):,} | **Likes**: {metrics_a.get('likes', 0):,} | **Comments**: {metrics_a.get('comments', 0):,}
+- **Duration**: {metrics_a.get('duration', 0)}s
 - **Engagement Rate**: {video_a.get('engagement_rate')}%
 - **Hook (first 15s)**: "{hook_a}"
 
 ### Video B (Variant / Competitor)
 - **Title**: "{video_b.get('title')}"
 - **Platform**: {video_b.get('platform')}
+- **Creator**: {video_b.get('creator', 'Unknown')}
+- **Followers / Subscribers**: {_fmt_followers(video_b.get('follower_count', 0))}
+- **Upload Date**: {video_b.get('upload_date', 'Unknown')}
+- **Hashtags**: {hashtags_b}
 - **Views**: {metrics_b.get('views', 0):,} | **Likes**: {metrics_b.get('likes', 0):,} | **Comments**: {metrics_b.get('comments', 0):,}
+- **Duration**: {metrics_b.get('duration', 0)}s
 - **Engagement Rate**: {video_b.get('engagement_rate')}%
 - **Hook (first 15s)**: "{hook_b}"
 
