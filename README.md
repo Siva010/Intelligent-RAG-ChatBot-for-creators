@@ -1,4 +1,4 @@
-# CreatorJoy Replica: Viral Script Doctor & RAG Intelligence Engine
+# Viral Script Doctor & RAG Intelligence Engine
 
 A high-fidelity, production-grade RAG (Retrieval-Augmented Generation) application built to compare social media video transcripts and performance metrics, isolate viral hook psychology, and support memory-aware conversations with citations.
 
