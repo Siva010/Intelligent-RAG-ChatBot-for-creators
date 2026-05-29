@@ -1,4 +1,4 @@
-import React, { useRef, useEffect } from 'react';
+import React, { useRef, useEffect, useState } from 'react';
 import { Send, Bot, User, Loader2, PlayCircle, Zap } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import { VideoData } from './AnalyticalHeader';
@@ -29,11 +29,24 @@ export default function ChatConsole({
   videoA,
   videoB
 }: ChatConsoleProps) {
-  const chatEndRef = useRef<HTMLDivElement>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const [isAutoScroll, setIsAutoScroll] = useState(true);
 
+  // Auto-scroll logic: only scroll if the user hasn't manually scrolled up
   useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, isLoading]);
+    if (isAutoScroll && scrollContainerRef.current) {
+      scrollContainerRef.current.scrollTop = scrollContainerRef.current.scrollHeight;
+    }
+  }, [messages, isLoading, isAutoScroll]);
+
+  // Detect if user scrolled up
+  const handleScroll = () => {
+    if (!scrollContainerRef.current) return;
+    const { scrollTop, scrollHeight, clientHeight } = scrollContainerRef.current;
+    // If they are within 100px of the bottom, re-enable auto-scroll
+    const isAtBottom = scrollHeight - scrollTop - clientHeight < 100;
+    setIsAutoScroll(isAtBottom);
+  };
 
   const engA = videoA?.engagement_rate || 0;
   const engB = videoB?.engagement_rate || 0;
@@ -161,7 +174,11 @@ export default function ChatConsole({
         <span className="text-[10px] uppercase font-bold tracking-widest text-zinc-500">Active Session</span>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-6 space-y-6">
+      <div 
+        ref={scrollContainerRef}
+        onScroll={handleScroll}
+        className="flex-1 overflow-y-auto p-6 space-y-6"
+      >
         {messages.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full text-center max-w-sm mx-auto gap-5">
             <Bot className="w-10 h-10 text-sky-500 mb-1 stroke-[1.5]" />
@@ -249,7 +266,6 @@ export default function ChatConsole({
             </div>
           </div>
         )}
-        <div ref={chatEndRef} />
       </div>
 
       {/* Input Console */}
