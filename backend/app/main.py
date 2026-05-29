@@ -99,7 +99,7 @@ async def analyze_videos(req: AnalyzeRequest):
 
                 # 4. Initialize LangGraph Session & Hook Audit
                 await q.put({"type": "progress", "message": "Assembling RAG Context & Generating Hook Audit..."})
-                session_result = await asyncio.to_thread(initialize_session, session_id, data_a, data_b)
+                session_result = await initialize_session(session_id, data_a, data_b)
                 
                 await q.put({"type": "complete", "data": {
                     "video_a": {

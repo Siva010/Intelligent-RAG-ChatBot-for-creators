@@ -4,6 +4,7 @@ import re as _re
 import time
 from typing import Annotated, Sequence, TypedDict, Dict, Any, List, Literal
 from langchain_core.messages import BaseMessage, SystemMessage, HumanMessage, AIMessage
+from langchain_core.runnables import RunnableConfig
 from langgraph.graph import StateGraph, START, END
 from langgraph.graph.message import add_messages
 from langgraph.checkpoint.memory import MemorySaver
@@ -164,14 +165,13 @@ def format_context_node(state: AgentState) -> Dict[str, Any]:
 # ---------------------------------------------------------------------------
 # Node 2: Generate Initial Hook Analysis
 # ---------------------------------------------------------------------------
-def generate_hook_node(state: AgentState) -> Dict[str, Any]:
+async def generate_hook_node(state: AgentState, config: RunnableConfig) -> Dict[str, Any]:
     logger.info("LangGraph: generate_hook node")
 
     video_a = state["video_a"]
     video_b = state["video_b"]
-    is_mock = False
 
-    hook_prompt = f"""Perform a sharp, evidence-based hook audit comparing Video A and Video B.
+    hook_prompt = """Perform a sharp, evidence-based hook audit comparing Video A and Video B.
 
 Use only the hook transcripts and metrics provided in the system context.
 Structure your response in clean Markdown with these three sections:
@@ -187,21 +187,28 @@ Declare a clear winner with one-sentence justification backed by the engagement 
 
 Keep the whole response under 280 words. Be surgical — no filler."""
 
-    analysis_text = _invoke_llm_with_retry(
+    reply_msg = await _astream_llm_with_retry(
         messages=[
             SystemMessage(content=format_system_prompt(video_a, video_b)),
             HumanMessage(content=hook_prompt),
         ],
+        config=config,
         temperature=0.15,
     )
 
-    if not analysis_text:
-        analysis_text = _generate_mock_hook_analysis(video_a, video_b)
-        is_mock = True
+    if reply_msg:
+        analysis_text = extract_text(reply_msg.content)
+        return {
+            "hook_analysis": analysis_text,
+            "is_mock_analysis": False,
+            "messages": [AIMessage(content=f"### Initial Hook Audit & Diagnostics\n\n{analysis_text}")],
+        }
 
+    # Fallback: mock analysis when LLM is unavailable
+    analysis_text = _generate_mock_hook_analysis(video_a, video_b)
     return {
         "hook_analysis": analysis_text,
-        "is_mock_analysis": is_mock,
+        "is_mock_analysis": True,
         "messages": [AIMessage(content=f"### Initial Hook Audit & Diagnostics\n\n{analysis_text}")],
     }
 
@@ -256,7 +263,7 @@ def retrieve_relevant_segments(query: str, state: AgentState, n_results: int = 6
     return "\n\n---\n\n".join(context_parts)
 
 
-from langchain_core.runnables import RunnableConfig
+
 
 async def _astream_llm_with_retry(
     messages: List[BaseMessage],
@@ -402,11 +409,13 @@ agent_graph = workflow.compile(checkpointer=memory)
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
-def initialize_session(
+async def initialize_session(
     session_id: str, video_a: Dict[str, Any], video_b: Dict[str, Any]
 ) -> Dict[str, Any]:
     """
     Initialises a new comparative analysis session and generates the initial hook audit.
+    Now async — uses ainvoke so generate_hook_node can stream via LangGraph without
+    blocking the FastAPI event loop.
     """
     config = {"configurable": {"thread_id": session_id}}
     initial_state = {
@@ -418,7 +427,7 @@ def initialize_session(
         "session_id": session_id,
     }
 
-    res = agent_graph.invoke(initial_state, config=config)
+    res = await agent_graph.ainvoke(initial_state, config=config)
 
     return {
         "hook_analysis": res.get("hook_analysis", ""),
