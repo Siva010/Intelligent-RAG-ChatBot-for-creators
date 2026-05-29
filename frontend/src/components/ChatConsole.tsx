@@ -158,35 +158,7 @@ export default function ChatConsole({
                 Ingest two videos above, then tap a question or type your own.
               </p>
             </div>
-            {/* Quick prompt chips */}
-            {!disabled && (
-              <div className="flex flex-col gap-2 w-full">
-                <div className="flex items-center gap-1.5 justify-center mb-1">
-                  <Zap className="w-3 h-3 text-sky-400" />
-                  <span className="text-[10px] font-black uppercase tracking-widest text-sky-400">Quick Prompts</span>
-                </div>
-                {QUICK_PROMPTS.map((prompt, i) => (
-                  <button
-                    key={i}
-                    onClick={() => {
-                      setInput(prompt);
-                      // fire immediately via a synthetic form submit
-                      const evt = { preventDefault: () => {} } as React.FormEvent;
-                      // slight delay so state update can flush
-                      setTimeout(() => {
-                        setInput(prompt);
-                        const form = document.getElementById('chat-form') as HTMLFormElement | null;
-                        if (form) form.requestSubmit();
-                      }, 50);
-                    }}
-                    disabled={isLoading}
-                    className="text-left w-full px-3 py-2.5 rounded-xl bg-zinc-900/60 border border-zinc-800 hover:border-sky-500/40 hover:bg-zinc-900 text-xs text-zinc-300 hover:text-white transition-all disabled:opacity-40 disabled:cursor-not-allowed"
-                  >
-                    {prompt}
-                  </button>
-                ))}
-              </div>
-            )}
+            {/* Quick prompt chips removed per request */}
           </div>
         ) : (
           messages.map((msg, idx) => (
