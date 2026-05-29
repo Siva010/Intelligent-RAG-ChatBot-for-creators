@@ -103,7 +103,7 @@ async def analyze_videos(req: AnalyzeRequest):
                 async for evt_type, payload in astream_session(session_id, data_a, data_b):
                     if evt_type == "hook_chunk":
                         await q.put({"type": "hook_chunk", "chunk": payload})
-                    elif evt_type == "done":
+                    elif evt_type == "done" and isinstance(payload, dict):
                         session_meta = payload
 
                 await q.put({"type": "complete", "data": {

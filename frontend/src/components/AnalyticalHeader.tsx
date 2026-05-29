@@ -209,8 +209,8 @@ export default function AnalyticalHeader({ videoA, videoB }: AnalyticalHeaderPro
                 <span
                   title="1-3% Average | 4-6% Excellent | >10% Extremely Rare (viral/hyper-loyal)"
                   className={`cursor-help text-[10px] px-1.5 py-0.5 rounded border ${data.engagement_rate > 10 ? 'bg-amber-500/10 border-amber-500/20 text-amber-400' :
-                      data.engagement_rate >= 4 ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' :
-                        'bg-zinc-500/10 border-zinc-500/20 text-zinc-400'
+                    data.engagement_rate >= 4 ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' :
+                      'bg-zinc-500/10 border-zinc-500/20 text-zinc-400'
                     }`}
                 >
                   {data.engagement_rate > 10 ? 'Rare' : data.engagement_rate >= 4 ? 'Excellent' : 'Average'}
