@@ -1,5 +1,5 @@
 import React, { useRef, useEffect } from 'react';
-import { Send, Bot, User, Loader2, PlayCircle } from 'lucide-react';
+import { Send, Bot, User, Loader2, PlayCircle, Zap } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 
 export interface ChatMessage {
@@ -15,6 +15,14 @@ interface ChatConsoleProps {
   isLoading: boolean;
   disabled: boolean;
 }
+
+const QUICK_PROMPTS = [
+  "Why did Video A get more engagement than Video B?",
+  "What's the engagement rate of each video?",
+  "Compare the hooks in the first 5 seconds.",
+  "Who's the creator of Video B and what's their follower count?",
+  "Suggest improvements for B based on what worked in A.",
+];
 
 export default function ChatConsole({
   messages,
@@ -140,15 +148,45 @@ export default function ChatConsole({
         <span className="text-[10px] uppercase font-bold tracking-widest text-zinc-500">Active Session</span>
       </div>
 
-      {/* Messages Console */}
       <div className="flex-1 overflow-y-auto p-6 space-y-6">
         {messages.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-full text-center max-w-sm mx-auto">
-            <Bot className="w-10 h-10 text-sky-500 mb-4 stroke-[1.5]" />
-            <h3 className="text-md font-bold text-white mb-2">Ask the Content RAG Chatbot</h3>
-            <p className="text-xs text-zinc-400 leading-relaxed">
-              Compare the hooks, pacing, retention triggers, and structure. Ask anything about how Video A compares to Video B.
-            </p>
+          <div className="flex flex-col items-center justify-center h-full text-center max-w-sm mx-auto gap-5">
+            <Bot className="w-10 h-10 text-sky-500 mb-1 stroke-[1.5]" />
+            <div>
+              <h3 className="text-md font-bold text-white mb-1">Ask the Content RAG Chatbot</h3>
+              <p className="text-xs text-zinc-400 leading-relaxed">
+                Ingest two videos above, then tap a question or type your own.
+              </p>
+            </div>
+            {/* Quick prompt chips */}
+            {!disabled && (
+              <div className="flex flex-col gap-2 w-full">
+                <div className="flex items-center gap-1.5 justify-center mb-1">
+                  <Zap className="w-3 h-3 text-sky-400" />
+                  <span className="text-[10px] font-black uppercase tracking-widest text-sky-400">Quick Prompts</span>
+                </div>
+                {QUICK_PROMPTS.map((prompt, i) => (
+                  <button
+                    key={i}
+                    onClick={() => {
+                      setInput(prompt);
+                      // fire immediately via a synthetic form submit
+                      const evt = { preventDefault: () => {} } as React.FormEvent;
+                      // slight delay so state update can flush
+                      setTimeout(() => {
+                        setInput(prompt);
+                        const form = document.getElementById('chat-form') as HTMLFormElement | null;
+                        if (form) form.requestSubmit();
+                      }, 50);
+                    }}
+                    disabled={isLoading}
+                    className="text-left w-full px-3 py-2.5 rounded-xl bg-zinc-900/60 border border-zinc-800 hover:border-sky-500/40 hover:bg-zinc-900 text-xs text-zinc-300 hover:text-white transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    {prompt}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
         ) : (
           messages.map((msg, idx) => (
@@ -199,7 +237,7 @@ export default function ChatConsole({
       </div>
 
       {/* Input Console */}
-      <form onSubmit={onSendMessage} className="p-4 border-t border-zinc-800 bg-zinc-950/60">
+      <form id="chat-form" onSubmit={onSendMessage} className="p-4 border-t border-zinc-800 bg-zinc-950/60">
         <div className="relative flex items-center">
           <input
             type="text"
