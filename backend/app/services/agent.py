@@ -36,8 +36,7 @@ def _get_llm(temperature: float = 0.15):
         model="gemini-2.5-flash",
         google_api_key=settings.google_api_key,
         temperature=temperature,
-        # Larger context window means we can pass more transcript chunks
-        max_output_tokens=2048,
+        max_output_tokens=8192,
     )
 
 

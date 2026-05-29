@@ -77,43 +77,37 @@ export default function Home() {
 
       const reader = response.body.getReader();
       const decoder = new TextDecoder('utf-8');
+      let sseBuffer = '';
 
       while (true) {
         const { value, done } = await reader.read();
         if (done) break;
 
-        const chunkText = decoder.decode(value, { stream: true });
-        const lines = chunkText.split('\n');
+        sseBuffer += decoder.decode(value, { stream: true });
+        const lines = sseBuffer.split('\n');
+        sseBuffer = lines.pop() ?? '';
 
         for (const line of lines) {
-          if (line.startsWith('data: ')) {
-            const dataStr = line.slice(6).trim();
-            if (dataStr === '[DONE]') {
-              continue;
-            }
-            try {
-              const msg = JSON.parse(dataStr);
-              if (msg.type === 'progress') {
-                setLoadingStep(msg.message);
-              } else if (msg.type === 'complete') {
-                setVideoA(msg.data.video_a);
-                setVideoB(msg.data.video_b);
-                setIsMockAnalysis(msg.data.is_mock_analysis || false);
-                
-                if (msg.data.chat_history) {
-                  setChatMessages(msg.data.chat_history);
-                }
-              } else if (msg.type === 'error') {
-                throw new Error(msg.message);
+          if (!line.startsWith('data: ')) continue;
+          const dataStr = line.slice(6).trim();
+          if (dataStr === '[DONE]') continue;
+          try {
+            const msg = JSON.parse(dataStr);
+            if (msg.type === 'progress') {
+              setLoadingStep(msg.message);
+            } else if (msg.type === 'complete') {
+              setVideoA(msg.data.video_a);
+              setVideoB(msg.data.video_b);
+              setIsMockAnalysis(msg.data.is_mock_analysis || false);
+              if (msg.data.chat_history) {
+                setChatMessages(msg.data.chat_history);
               }
-            } catch (e: any) {
-              if (e instanceof SyntaxError) {
-                // partial chunk or weird spacing, wait for next buffer (handled simply here)
-                // for this demo we assume small payloads that don't chunk over lines
-              } else {
-                throw e;
-              }
+            } else if (msg.type === 'error') {
+              throw new Error(msg.message);
             }
+          } catch (e: any) {
+            if (!(e instanceof SyntaxError)) throw e;
+            // incomplete line still in sseBuffer — wait for next read
           }
         }
       }
@@ -167,39 +161,43 @@ export default function Home() {
 
       if (reader) {
         let isDone = false;
+        // Buffer accumulates raw bytes across read() calls.
+        // TCP can split a single SSE event across multiple chunks, so we must
+        // only process complete newline-terminated lines.
+        let sseBuffer = '';
+
         while (!isDone) {
           const { value, done } = await reader.read();
           if (done) break;
 
-          const chunk = decoder.decode(value);
-          // SSE events are formatted as "data: { ... }\n\n"
-          const lines = chunk.split('\n');
+          // stream:true keeps the decoder's internal state for multi-byte chars
+          sseBuffer += decoder.decode(value, { stream: true });
+
+          // Split on newlines — keep the last (potentially incomplete) segment
+          const lines = sseBuffer.split('\n');
+          sseBuffer = lines.pop() ?? ''; // last element may be an incomplete line
+
           for (const line of lines) {
-            if (line.startsWith('data: ')) {
-              const dataStr = line.slice(6).trim();
-              if (dataStr === '[DONE]') {
-                isDone = true;
-                break;
+            if (!line.startsWith('data: ')) continue;
+            const dataStr = line.slice(6).trim();
+            if (dataStr === '[DONE]') {
+              isDone = true;
+              break;
+            }
+            try {
+              const parsed = JSON.parse(dataStr);
+              if (parsed.chunk) {
+                assistantReply += parsed.chunk;
+                setChatMessages(prev => {
+                  const next = [...prev];
+                  if (next.length > 0) {
+                    next[next.length - 1] = { role: 'assistant', content: assistantReply };
+                  }
+                  return next;
+                });
               }
-              try {
-                const parsed = JSON.parse(dataStr);
-                if (parsed.chunk) {
-                  assistantReply += parsed.chunk;
-                  // Update the last message content in the list
-                  setChatMessages(prev => {
-                    const next = [...prev];
-                    if (next.length > 0) {
-                      next[next.length - 1] = {
-                        role: 'assistant',
-                        content: assistantReply
-                      };
-                    }
-                    return next;
-                  });
-                }
-              } catch (e) {
-                // Ignore parsing errors for partial/malformed JSON chunks
-              }
+            } catch {
+              // genuinely malformed event — skip it
             }
           }
         }
