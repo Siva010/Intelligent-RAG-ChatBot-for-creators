@@ -119,6 +119,64 @@ class RealMediaIngestor(BaseIngestor):
         description: str = info.get('description') or title
         platform: str = info.get('extractor', 'unknown').split(':')[0].lower()
 
+        # ---------------------------------------------------------------
+        # Creator / uploader name
+        # ---------------------------------------------------------------
+        creator: str = (
+            info.get('channel') or
+            info.get('uploader') or
+            info.get('creator') or
+            'Unknown Creator'
+        )
+
+        # ---------------------------------------------------------------
+        # Follower / subscriber count
+        # Note: Instagram does not expose follower counts publicly via yt-dlp.
+        # YouTube returns channel_follower_count for most channels.
+        # ---------------------------------------------------------------
+        raw_followers = (
+            info.get('channel_follower_count') or
+            info.get('uploader_follower_count') or
+            info.get('subscriber_count')
+        )
+        follower_count: int = int(raw_followers) if raw_followers is not None else 0
+
+        # ---------------------------------------------------------------
+        # Hashtags — yt-dlp returns these in the 'tags' list
+        # ---------------------------------------------------------------
+        raw_tags = info.get('tags') or []
+        hashtags: List[str] = [f"#{t.replace(' ', '')}" for t in raw_tags[:10] if t]
+
+        # ---------------------------------------------------------------
+        # Upload date — yt-dlp returns YYYYMMDD string
+        # ---------------------------------------------------------------
+        raw_date = info.get('upload_date')
+        if raw_date and isinstance(raw_date, str) and len(raw_date) == 8:
+            # Format YYYYMMDD → YYYY-MM-DD
+            upload_date: str = f"{raw_date[:4]}-{raw_date[4:6]}-{raw_date[6:8]}"
+        else:
+            # Try unix timestamp fallback (some extractors return this)
+            raw_ts = info.get('timestamp')
+            if raw_ts:
+                from datetime import datetime, timezone
+                upload_date = datetime.fromtimestamp(float(raw_ts), tz=timezone.utc).strftime('%Y-%m-%d')
+            else:
+                upload_date = 'Unknown'
+
+        # ---------------------------------------------------------------
+        # Thumbnail URL — prefer the highest-resolution available
+        # ---------------------------------------------------------------
+        thumbnail_url: str = info.get('thumbnail') or ''
+        thumbnails = info.get('thumbnails') or []
+        if thumbnails:
+            # yt-dlp lists thumbnails from low → high resolution
+            best = thumbnails[-1].get('url', '')
+            if best:
+                thumbnail_url = best
+
+        # ---------------------------------------------------------------
+        # View / like / comment / duration counts
+        # ---------------------------------------------------------------
         # View count — Instagram often omits this; try multiple keys
         raw_views = (
             info.get('view_count') or
@@ -142,7 +200,9 @@ class RealMediaIngestor(BaseIngestor):
 
         engagement_rate = round(((likes + comments) / views) * 100, 2) if views > 0 else 0.0
 
+        # ---------------------------------------------------------------
         # Transcript
+        # ---------------------------------------------------------------
         transcript_data: List[Dict[str, Any]] = []
         whisper_stubbed = False
         error_message = None
@@ -172,6 +232,11 @@ class RealMediaIngestor(BaseIngestor):
             "video_id": video_id,
             "platform": platform,
             "title": title,
+            "creator": creator,
+            "follower_count": follower_count,
+            "hashtags": hashtags,
+            "upload_date": upload_date,
+            "thumbnail_url": thumbnail_url,
             "metrics": {
                 "views": views,
                 "likes": likes,
