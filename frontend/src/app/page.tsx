@@ -4,10 +4,12 @@ import React, { useState } from 'react';
 import { AlertCircle, RefreshCw, BarChart3, Sparkles } from 'lucide-react';
 import ChatConsole, { ChatMessage } from '../components/ChatConsole';
 import AnalyticalHeader, { VideoData } from '../components/AnalyticalHeader';
+import { useSession } from 'next-auth/react';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://127.0.0.1:8000';
 
 export default function Home() {
+  const { data: session } = useSession();
   const [urlA, setUrlA] = useState('');
   const [urlB, setUrlB] = useState('');
   const [sessionId, setSessionId] = useState('');
@@ -41,22 +43,33 @@ export default function Home() {
     setChatMessages([]);
 
     try {
-      const response = await fetch(`${API_URL}/analyze`, {
+      // Step 1: Enqueue the task
+      const initResponse = await fetch(`${API_URL}/analyze`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ url_a: urlA, url_b: urlB }),
       });
 
-      if (!response.ok) {
-        const errData = await response.json().catch(() => ({}));
-        throw new Error(errData.detail || 'Failed to analyze videos. Check backend logs.');
+      if (!initResponse.ok) {
+        const errData = await initResponse.json().catch(() => ({}));
+        throw new Error(errData.detail || 'Failed to initialize analysis job. Check backend logs.');
       }
 
-      if (!response.body) {
+      const { task_id, session_id } = await initResponse.json();
+      if (session_id) setSessionId(session_id);
+
+      // Step 2: Stream updates via Redis PubSub from the Celery worker
+      const streamResponse = await fetch(`${API_URL}/analyze/stream/${task_id}`);
+
+      if (!streamResponse.ok) {
+        throw new Error('Failed to connect to task stream.');
+      }
+
+      if (!streamResponse.body) {
         throw new Error('ReadableStream not yet supported in this browser.');
       }
 
-      const reader = response.body.getReader();
+      const reader = streamResponse.body.getReader();
       const decoder = new TextDecoder('utf-8');
       let sseBuffer = '';
       let hookAccum = '';
@@ -247,10 +260,15 @@ export default function Home() {
             <div className="flex justify-center mt-8">
               <button
                 type="submit"
-                disabled={isLoading}
+                disabled={isLoading || !session}
                 className="w-full md:w-auto h-14 px-10 rounded-full bg-gradient-to-r from-sky-400 to-cyan-500 hover:from-sky-300 hover:to-cyan-400 disabled:opacity-50 disabled:cursor-not-allowed text-sm font-black tracking-widest text-[#09111E] uppercase shadow-[0_0_30px_rgba(56,189,248,0.3)] hover:shadow-[0_0_40px_rgba(56,189,248,0.5)] flex items-center justify-center gap-3 transition-all hover:-translate-y-0.5 active:translate-y-0"
               >
-                {isLoading ? (
+                {!session ? (
+                  <>
+                    <AlertCircle className="w-4 h-4" />
+                    Sign In to Analyze
+                  </>
+                ) : isLoading ? (
                   <>
                     <RefreshCw className="w-4 h-4 animate-spin" />
                     {loadingStep}
