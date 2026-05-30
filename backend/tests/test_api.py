@@ -98,16 +98,16 @@ class TestAnalyzeValidation:
         assert resp.status_code == 422
 
     def test_missing_url_b_returns_422(self, client):
-        resp = client.post("/analyze", json={"url_a": "https://yt.com/a", "session_id": "s1"})
+        # session_id is no longer part of the request model
+        resp = client.post("/analyze", json={"url_a": "https://yt.com/a"})
         assert resp.status_code == 422
 
     def test_empty_url_a_returns_400(self, client):
         resp = client.post("/analyze", json={
             "url_a": "",
             "url_b": "https://yt.com/b",
-            "session_id": "s1",
         })
-        # Our route checks for empty strings and raises 400
+        # Route strips and checks for empty strings, raises 400
         assert resp.status_code == 400
 
 
@@ -141,7 +141,7 @@ async def _fake_astream_session(session_id, data_a, data_b):
 
 
 class TestAnalyzeSSEFlow:
-    def _run_sse(self, client, url_a, url_b, session_id="test_session"):
+    def _run_sse(self, client, url_a, url_b):
         """Helper: POST /analyze and collect all SSE messages into a list."""
         with patch("app.main.get_ingestor_for_url") as mock_ingestor_factory, \
              patch("app.main.vector_store") as mock_vs, \
@@ -158,7 +158,6 @@ class TestAnalyzeSSEFlow:
             with client.stream("POST", "/analyze", json={
                 "url_a": url_a,
                 "url_b": url_b,
-                "session_id": session_id,
             }) as response:
                 assert response.status_code == 200
                 messages = []
@@ -262,22 +261,3 @@ class TestChatStreamSSE:
         data_values = [l[6:] for l in lines if l.startswith("data: ")]
         assert "[DONE]" in data_values
 
-
-# ---------------------------------------------------------------------------
-# GET /channel/{channel_id}/analytics  (mock data endpoint)
-# ---------------------------------------------------------------------------
-
-class TestChannelAnalyticsEndpoint:
-    def test_returns_200_for_valid_channel(self, client):
-        resp = client.get("/channel/UCtest123/analytics")
-        assert resp.status_code == 200
-
-    def test_response_is_json(self, client):
-        resp = client.get("/channel/UCtest123/analytics")
-        data = resp.json()
-        assert isinstance(data, dict)
-
-    def test_empty_channel_id_in_path_returns_404(self, client):
-        # FastAPI path param — empty string produces 404 (no route match)
-        resp = client.get("/channel//analytics")
-        assert resp.status_code in (404, 422)

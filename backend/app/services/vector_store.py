@@ -1,8 +1,8 @@
 import logging
 import uuid
-import time
 import numpy as np
 from typing import List, Dict, Any, Tuple, Optional
+from tenacity import retry, wait_exponential, stop_after_attempt, retry_if_exception
 from app.config import settings
 
 logger = logging.getLogger(__name__)
@@ -105,14 +105,32 @@ class VectorStoreManager:
           2. OpenAI text-embedding-3-small (uses OPENAI_API_KEY)
           3. Mock deterministic random vectors (dev fallback only)
         """
+        # Helper for Tenacity exponential backoff on 429s
+        def _is_429(e: Exception) -> bool:
+            return "429" in str(e)
+
         # 1. Google Embeddings (preferred — uses the new google-genai SDK)
         if settings.google_api_key:
             try:
                 from google import genai as google_genai
                 from google.genai import types as genai_types
                 client = google_genai.Client(api_key=settings.google_api_key)
-                # gemini-embedding-001 does not support batch mode — embed each text individually.
-                # Empty strings cause a 400 error; replace them with a zero vector placeholder.
+                
+                @retry(
+                    wait=wait_exponential(multiplier=1, min=2, max=60),
+                    stop=stop_after_attempt(6),
+                    retry=retry_if_exception(_is_429),
+                    reraise=True
+                )
+                def _do_embed(text: str):
+                    return client.models.embed_content(
+                        model="gemini-embedding-001",
+                        contents=text,
+                        config=genai_types.EmbedContentConfig(
+                            task_type="RETRIEVAL_DOCUMENT"
+                        ),
+                    )
+
                 EMBED_DIM = 3072
                 embeddings = []
                 for text in texts:
@@ -122,28 +140,11 @@ class VectorStoreManager:
                         embeddings.append([0.0] * EMBED_DIM)
                         logger.warning("Skipped empty chunk — inserted zero vector placeholder.")
                         continue
-                    max_retries = 3
-                    for attempt in range(max_retries):
-                        try:
-                            response = client.models.embed_content(
-                                model="gemini-embedding-001",
-                                contents=stripped,
-                                config=genai_types.EmbedContentConfig(
-                                    task_type="RETRIEVAL_DOCUMENT"
-                                ),
-                            )
-                            emb: list[float] = (response.embeddings[0].values if response.embeddings else None) or [0.0] * EMBED_DIM
-                            embeddings.append(emb)
-                            # Small intentional delay to avoid bursting the API
-                            time.sleep(1)
-                            break
-                        except Exception as e:
-                            err_str = str(e)
-                            if "429" in err_str and attempt < max_retries - 1:
-                                logger.warning(f"Embedding rate limit hit, waiting 15s before retry (Attempt {attempt+1}/{max_retries})...")
-                                time.sleep(15)
-                            else:
-                                raise e
+                        
+                    response = _do_embed(stripped)
+                    emb: list[float] = (response.embeddings[0].values if response.embeddings else None) or [0.0] * EMBED_DIM
+                    embeddings.append(emb)
+
                 logger.debug(f"Google embeddings generated for {len(texts)} texts")
                 return embeddings
             except Exception as e:
@@ -206,13 +207,14 @@ class VectorStoreManager:
     # Transcript helpers
     # ------------------------------------------------------------------
     def isolate_hooks(self, transcript: List[Dict[str, Any]]) -> str:
-        """Extracts the first 15 seconds of a transcript as a single string."""
-        hook_texts = []
-        for entry in transcript:
-            if entry.get("start", 0.0) < 15.0:
-                hook_texts.append(entry.get("text", ""))
-            else:
-                break
+        """Extracts the first 15 seconds of a transcript as a single string.
+        Uses a filter (not break) so unsorted transcripts are handled correctly.
+        """
+        hook_texts = [
+            entry.get("text", "")
+            for entry in transcript
+            if entry.get("start", 0.0) < 15.0
+        ]
         return " ".join(hook_texts)
 
     def chunk_transcript(
@@ -333,6 +335,21 @@ class VectorStoreManager:
             try:
                 embeddings = self.get_embeddings(texts)
                 
+                # Dimension validation
+                if embeddings:
+                    expected_dim = None
+                    try:
+                        stats = self.index.describe_index_stats()
+                        expected_dim = stats.get("dimension")
+                    except Exception as stats_e:
+                        logger.warning(f"Could not fetch Pinecone index stats: {stats_e}")
+                        
+                    actual_dim = len(embeddings[0])
+                    if expected_dim and actual_dim != expected_dim:
+                        err_msg = f"Embedding dimension mismatch: Pinecone index expects {expected_dim}-dim, but embeddings are {actual_dim}-dim."
+                        logger.error(err_msg)
+                        raise ValueError(err_msg)
+
                 # For Pinecone, we must store the text inside the metadata
                 vectors_to_upsert = []
                 for i in range(len(chunks)):

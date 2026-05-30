@@ -7,7 +7,8 @@ from langchain_core.messages import BaseMessage, SystemMessage, HumanMessage, AI
 from langchain_core.runnables import RunnableConfig
 from langgraph.graph import StateGraph, START, END
 from langgraph.graph.message import add_messages
-from langgraph.checkpoint.memory import MemorySaver
+from langgraph.checkpoint.redis import AsyncRedisSaver
+import redis.asyncio as redis_async
 from app.config import settings
 from app.services.vector_store import vector_store
 
@@ -41,37 +42,8 @@ def _get_llm(temperature: float = 0.15):
     )
 
 
-def _invoke_llm_with_retry(
-    messages: List[BaseMessage],
-    temperature: float = 0.15,
-    max_attempts: int = 2,
-) -> str | None:
-    """
-    Invokes the Gemini LLM with automatic retry on rate-limit errors (HTTP 429).
-    Returns the response text, or None if all attempts fail.
-    """
-    if not settings.google_api_key:
-        return None
-
-    for attempt in range(max_attempts):
-        try:
-            llm = _get_llm(temperature)
-            response = llm.invoke(messages)
-            return extract_text(response.content)
-        except Exception as e:
-            err_str = str(e)
-            logger.warning(f"LLM attempt {attempt + 1}/{max_attempts} failed: {e}")
-            if "429" in err_str and attempt < max_attempts - 1:
-                delay_match = _re.search(r"retryDelay.*?'(\d+)s'", err_str)
-                wait = int(delay_match.group(1)) if delay_match else 55
-                wait = min(wait, 65)
-                logger.info(f"Rate limited — waiting {wait}s before retry...")
-                time.sleep(wait)
-            else:
-                logger.error(f"LLM failed permanently: {e}")
-                return None
-
-    return None
+# _invoke_llm_with_retry was removed — all LLM calls go through the async
+# _astream_llm_with_retry path below.
 
 
 # ---------------------------------------------------------------------------
@@ -222,7 +194,8 @@ def _generate_mock_hook_analysis(video_a: Dict[str, Any], video_b: Dict[str, Any
     engagement_a = video_a.get("engagement_rate", 0)
     engagement_b = video_b.get("engagement_rate", 0)
 
-    winner = "Video A" if engagement_a > engagement_b else "Video B"
+    # Use >= so Video A wins ties — consistent with the frontend ChatConsole logic.
+    winner = "Video A" if engagement_a >= engagement_b else "Video B"
     loser = "Video B" if winner == "Video A" else "Video A"
     win_data = video_a if winner == "Video A" else video_b
     lose_data = video_b if winner == "Video A" else video_a
@@ -407,7 +380,8 @@ workflow.add_edge("format_context", "generate_hook")
 workflow.add_edge("generate_hook", END)
 workflow.add_edge("chat_assistant", END)
 
-memory = MemorySaver()
+redis_client = redis_async.Redis.from_url(settings.redis_url, decode_responses=False)
+memory = AsyncRedisSaver(redis_client=redis_client)
 agent_graph = workflow.compile(checkpointer=memory)
 
 
@@ -532,34 +506,8 @@ async def astream_session(
     })
 
 
-def send_chat_message(session_id: str, message: str) -> Dict[str, Any]:
-    """
-    Sends a new user turn and retrieves the AI response.
-    """
-    config = {"configurable": {"thread_id": session_id}}
-
-    state_info = agent_graph.get_state(config)
-    if not state_info or not state_info.values:
-        raise ValueError(
-            f"Session '{session_id}' not found. Call /analyze first to initialise."
-        )
-
-    res = agent_graph.invoke({"messages": [HumanMessage(content=message)]}, config=config)
-
-    ai_messages = [m for m in res.get("messages", []) if m.type == "ai"]
-    last_reply = extract_text(ai_messages[-1].content) if ai_messages else "No reply generated."
-
-    return {
-        "reply": last_reply,
-        "messages": [
-            {
-                "role": "user" if m.type == "human" else "assistant",
-                "content": extract_text(m.content),
-            }
-            for m in res.get("messages", [])
-            if m.type in ("human", "ai")
-        ],
-    }
+# send_chat_message (sync) was removed — the active code path uses
+# stream_chat_message_sse (async SSE) exclusively.
 
 
 async def stream_chat_message_sse(session_id: str, message: str):

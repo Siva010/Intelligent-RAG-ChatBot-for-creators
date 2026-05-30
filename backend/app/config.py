@@ -15,6 +15,7 @@ class Settings(BaseSettings):
     cache_expiry_seconds: int = 3600
     host: str = "127.0.0.1"
     port: int = 8000
+    rate_limit_per_minute: int = 20
 
     # CORS: comma-separated list of allowed origins.
     # Override via CORS_ORIGINS env var for staging/production.

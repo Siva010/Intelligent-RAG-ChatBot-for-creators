@@ -17,3 +17,6 @@ python-dotenv>=1.0.0 #load the enviromnent variables
 pytest>=7.0.0 # used for testing
 pytest-asyncio>=0.23.0 # async test support for astream_session / SSE generators
 httpx>=0.27.0 # required by FastAPI TestClient for async routes
+slowapi>=0.1.9 # rate limiting
+langgraph-checkpoint-redis>=0.4.1 # redis persistence for langgraph
+tenacity>=8.5.0 # exponential backoff for network calls
