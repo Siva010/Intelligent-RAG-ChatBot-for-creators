@@ -7,8 +7,8 @@ from langchain_core.messages import BaseMessage, SystemMessage, HumanMessage, AI
 from langchain_core.runnables import RunnableConfig
 from langgraph.graph import StateGraph, START, END
 from langgraph.graph.message import add_messages
-from langgraph.checkpoint.redis import AsyncRedisSaver
-import redis.asyncio as redis_async
+from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
+import aiosqlite
 from app.config import settings
 from app.services.vector_store import vector_store
 
@@ -380,10 +380,6 @@ workflow.add_edge("format_context", "generate_hook")
 workflow.add_edge("generate_hook", END)
 workflow.add_edge("chat_assistant", END)
 
-redis_client = redis_async.Redis.from_url(settings.redis_url, decode_responses=False)
-memory = AsyncRedisSaver(redis_client=redis_client)
-agent_graph = workflow.compile(checkpointer=memory)
-
 
 # ---------------------------------------------------------------------------
 # Public API
@@ -396,30 +392,38 @@ async def initialize_session(
     Now async — uses ainvoke so generate_hook_node can stream via LangGraph without
     blocking the FastAPI event loop.
     """
-    config = {"configurable": {"thread_id": session_id}}
-    initial_state = {
-        "messages": [HumanMessage(content="Start Comparative Analysis Audit")],
-        "video_a": video_a,
-        "video_b": video_b,
-        "hook_analysis": "",
-        "is_mock_analysis": False,
-        "session_id": session_id,
-    }
+    conn = await aiosqlite.connect("checkpoints.sqlite")
+    try:
+        memory = AsyncSqliteSaver(conn)
+        await memory.setup()
+        agent_graph = workflow.compile(checkpointer=memory)
 
-    res = await agent_graph.ainvoke(initial_state, config=config)
-
-    return {
-        "hook_analysis": res.get("hook_analysis", ""),
-        "is_mock_analysis": res.get("is_mock_analysis", False),
-        "messages": [
-            {
-                "role": "user" if m.type == "human" else "assistant",
-                "content": extract_text(m.content),
-            }
-            for m in res.get("messages", [])
-            if m.type in ("human", "ai")
-        ],
-    }
+        config = {"configurable": {"thread_id": session_id}}
+        initial_state = {
+            "messages": [HumanMessage(content="Start Comparative Analysis Audit")],
+            "video_a": video_a,
+            "video_b": video_b,
+            "hook_analysis": "",
+            "is_mock_analysis": False,
+            "session_id": session_id,
+        }
+    
+        res = await agent_graph.ainvoke(initial_state, config=config)
+    
+        return {
+            "hook_analysis": res.get("hook_analysis", ""),
+            "is_mock_analysis": res.get("is_mock_analysis", False),
+            "messages": [
+                {
+                    "role": "user" if m.type == "human" else "assistant",
+                    "content": extract_text(m.content),
+                }
+                for m in res.get("messages", [])
+                if m.type in ("human", "ai")
+            ],
+        }
+    finally:
+        await conn.close()
 
 
 async def astream_session(
@@ -435,75 +439,83 @@ async def astream_session(
     Using astream_events lets the hook analysis appear in the chat as it's generated,
     satisfying the spec requirement that all responses must stream.
     """
-    config: RunnableConfig = {"configurable": {"thread_id": session_id}}
+    conn = await aiosqlite.connect("checkpoints.sqlite")
+    try:
+        memory = AsyncSqliteSaver(conn)
+        await memory.setup()
+        agent_graph = workflow.compile(checkpointer=memory)
+
+        config: RunnableConfig = {"configurable": {"thread_id": session_id}}
     
-    # Check if this thread already has an initialized session
-    state_info = agent_graph.get_state(config)
-    if state_info and state_info.values and state_info.values.get("hook_analysis"):
-        logger.info(f"Session {session_id} already exists. Returning cached chat history.")
-        hook_analysis = state_info.values.get("hook_analysis", "")
-        is_mock = state_info.values.get("is_mock_analysis", False)
-        chat_history = []
-        for m in state_info.values.get("messages", []):
-            if m.type in ("human", "ai"):
-                chat_history.append({
-                    "role": "user" if m.type == "human" else "assistant",
-                    "content": extract_text(m.content),
-                })
+        # Check if this thread already has an initialized session
+        state_info = await agent_graph.aget_state(config)
+        if state_info and state_info.values and state_info.values.get("hook_analysis"):
+            logger.info(f"Session {session_id} already exists. Returning cached chat history.")
+            hook_analysis = state_info.values.get("hook_analysis", "")
+            is_mock = state_info.values.get("is_mock_analysis", False)
+            chat_history = []
+            for m in state_info.values.get("messages", []):
+                if m.type in ("human", "ai"):
+                    chat_history.append({
+                        "role": "user" if m.type == "human" else "assistant",
+                        "content": extract_text(m.content),
+                    })
+            yield ("done", {
+                "hook_analysis": hook_analysis,
+                "is_mock_analysis": is_mock,
+                "chat_history": chat_history,
+            })
+            return
+    
+        initial_state = {
+            "messages": [HumanMessage(content="Start Comparative Analysis Audit")],
+            "video_a": video_a,
+            "video_b": video_b,
+            "hook_analysis": "",
+            "is_mock_analysis": False,
+            "session_id": session_id,
+        }
+    
+        # Yield the section header immediately so the chat feels responsive
+        header = "### Initial Hook Audit & Diagnostics\n\n"
+        yield ("hook_chunk", header)
+    
+        emitted_any = False
+        async for event in agent_graph.astream_events(initial_state, config=config, version="v2"):
+            kind = event["event"]
+            if kind == "on_chat_model_stream":
+                token = event["data"]["chunk"].content
+                if token and isinstance(token, str):
+                    emitted_any = True
+                    yield ("hook_chunk", token)
+    
+        # Collect final state for the complete event
+        final = await agent_graph.aget_state(config)
+        hook_analysis = ""
+        is_mock = False
+        chat_history: List[Dict[str, str]] = []
+    
+        if final and final.values:
+            hook_analysis = final.values.get("hook_analysis", "")
+            is_mock = final.values.get("is_mock_analysis", False)
+            for m in final.values.get("messages", []):
+                if m.type in ("human", "ai"):
+                    chat_history.append({
+                        "role": "user" if m.type == "human" else "assistant",
+                        "content": extract_text(m.content),
+                    })
+    
+        # If no tokens streamed (LLM unavailable → mock path), flush the mock text at once
+        if not emitted_any and hook_analysis:
+            yield ("hook_chunk", hook_analysis)
+    
         yield ("done", {
             "hook_analysis": hook_analysis,
             "is_mock_analysis": is_mock,
             "chat_history": chat_history,
         })
-        return
-
-    initial_state = {
-        "messages": [HumanMessage(content="Start Comparative Analysis Audit")],
-        "video_a": video_a,
-        "video_b": video_b,
-        "hook_analysis": "",
-        "is_mock_analysis": False,
-        "session_id": session_id,
-    }
-
-    # Yield the section header immediately so the chat feels responsive
-    header = "### Initial Hook Audit & Diagnostics\n\n"
-    yield ("hook_chunk", header)
-
-    emitted_any = False
-    async for event in agent_graph.astream_events(initial_state, config=config, version="v2"):
-        kind = event["event"]
-        if kind == "on_chat_model_stream":
-            token = event["data"]["chunk"].content
-            if token and isinstance(token, str):
-                emitted_any = True
-                yield ("hook_chunk", token)
-
-    # Collect final state for the complete event
-    final = agent_graph.get_state(config)
-    hook_analysis = ""
-    is_mock = False
-    chat_history: List[Dict[str, str]] = []
-
-    if final and final.values:
-        hook_analysis = final.values.get("hook_analysis", "")
-        is_mock = final.values.get("is_mock_analysis", False)
-        for m in final.values.get("messages", []):
-            if m.type in ("human", "ai"):
-                chat_history.append({
-                    "role": "user" if m.type == "human" else "assistant",
-                    "content": extract_text(m.content),
-                })
-
-    # If no tokens streamed (LLM unavailable → mock path), flush the mock text at once
-    if not emitted_any and hook_analysis:
-        yield ("hook_chunk", hook_analysis)
-
-    yield ("done", {
-        "hook_analysis": hook_analysis,
-        "is_mock_analysis": is_mock,
-        "chat_history": chat_history,
-    })
+    finally:
+        await conn.close()
 
 
 # send_chat_message (sync) was removed — the active code path uses
@@ -516,37 +528,45 @@ async def stream_chat_message_sse(session_id: str, message: str):
     Uses LangGraph's native astream_events (v2) to capture true LLM output chunks 
     safely across different LangGraph versions.
     """
-    config: RunnableConfig = {"configurable": {"thread_id": session_id}}
-    
-    state_info = agent_graph.get_state(config)
-    if not state_info or not state_info.values:
-        yield dict(data=json.dumps({"chunk": "**Error:** Session not found. Call /analyze first. "}))
-        yield dict(data="[DONE]")
-        return
-        
+    conn = await aiosqlite.connect("checkpoints.sqlite")
     try:
-        inputs = {"messages": [HumanMessage(content=message)]}
-        
-        emitted_any = False
-        # astream_events is the safest way to extract streaming chunks in LangChain/LangGraph
-        async for event in agent_graph.astream_events(inputs, config=config, version="v2"):
-            kind = event["event"]
-            if kind == "on_chat_model_stream":
-                chunk_content = event["data"]["chunk"].content
-                if chunk_content and isinstance(chunk_content, str):
-                    emitted_any = True
-                    yield dict(data=json.dumps({"chunk": chunk_content}))
-                    
-        if not emitted_any:
-            # If no stream events fired (e.g. mock fallback was used), yield the final state's message
-            final_state = agent_graph.get_state(config)
-            if final_state and final_state.values and final_state.values.get("messages"):
-                last_msg = final_state.values["messages"][-1]
-                if last_msg.type == "ai" and getattr(last_msg, "content", ""):
-                    yield dict(data=json.dumps({"chunk": last_msg.content}))
+        memory = AsyncSqliteSaver(conn)
+        await memory.setup()
+        agent_graph = workflow.compile(checkpointer=memory)
 
-    except Exception as e:
-        logger.error(f"Error in stream_chat_message_sse: {e}")
-        yield dict(data=json.dumps({"chunk": f"**Error:** {str(e)} "}))
-        
-    yield dict(data="[DONE]")
+        config: RunnableConfig = {"configurable": {"thread_id": session_id}}
+    
+        state_info = await agent_graph.aget_state(config)
+        if not state_info or not state_info.values:
+            yield dict(data=json.dumps({"chunk": "**Error:** Session not found. Call /analyze first. "}))
+            yield dict(data="[DONE]")
+            return
+            
+        try:
+            inputs = {"messages": [HumanMessage(content=message)]}
+            
+            emitted_any = False
+            # astream_events is the safest way to extract streaming chunks in LangChain/LangGraph
+            async for event in agent_graph.astream_events(inputs, config=config, version="v2"):
+                kind = event["event"]
+                if kind == "on_chat_model_stream":
+                    chunk_content = event["data"]["chunk"].content
+                    if chunk_content and isinstance(chunk_content, str):
+                        emitted_any = True
+                        yield dict(data=json.dumps({"chunk": chunk_content}))
+                        
+            if not emitted_any:
+                # If no stream events fired (e.g. mock fallback was used), yield the final state's message
+                final_state = await agent_graph.aget_state(config)
+                if final_state and final_state.values and final_state.values.get("messages"):
+                    last_msg = final_state.values["messages"][-1]
+                    if last_msg.type == "ai" and getattr(last_msg, "content", ""):
+                        yield dict(data=json.dumps({"chunk": last_msg.content}))
+    
+        except Exception as e:
+            logger.error(f"Error in stream_chat_message_sse: {e}")
+            yield dict(data=json.dumps({"chunk": f"**Error:** {str(e)} "}))
+            
+        yield dict(data="[DONE]")
+    finally:
+        await conn.close()
