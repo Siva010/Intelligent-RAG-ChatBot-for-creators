@@ -45,15 +45,8 @@ export default function RootLayout({
                 <div className="hidden md:block">
                   <div className="ml-10 flex items-baseline space-x-4">
                     <Link href="/" className="text-zinc-300 hover:bg-zinc-800 hover:text-white px-3 py-2 rounded-md text-sm font-medium transition-colors">A/B Testing</Link>
-                    <Link href="/dashboard" className="text-zinc-300 hover:bg-[#0D182A] hover:text-white px-3 py-2 rounded-md text-sm font-medium transition-colors">🚧 Channel Analytics</Link>
-                    <Link href="/alerts" className="text-zinc-300 hover:bg-[#0D182A] hover:text-white px-3 py-2 rounded-md text-sm font-medium transition-colors">🚧 Trend Alerts</Link>
                   </div>
                 </div>
-              </div>
-              <div className="flex items-center gap-4">
-                <Link href="/pricing" className="flex h-10 items-center justify-center px-6 rounded-full bg-gradient-to-r from-sky-400 to-cyan-500 hover:from-sky-300 hover:to-cyan-400 text-[10px] font-black tracking-widest text-[#09111E] uppercase shadow-[0_0_15px_rgba(56,189,248,0.3)] hover:shadow-[0_0_20px_rgba(56,189,248,0.5)] transition-all hover:-translate-y-0.5 active:translate-y-0">
-                  Upgrade to Pro
-                </Link>
               </div>
             </div>
           </div>
