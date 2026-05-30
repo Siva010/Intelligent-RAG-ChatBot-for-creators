@@ -48,7 +48,8 @@ async def health_check():
 async def analyze_videos(req: AnalyzeRequest):
     url_a = req.url_a
     url_b = req.url_b
-    session_id = req.session_id
+    import hashlib
+    session_id = hashlib.md5(f"{url_a}|{url_b}".encode()).hexdigest()
 
     if not url_a or not url_b:
         raise HTTPException(status_code=400, detail="Both video URLs are required.")
@@ -139,7 +140,8 @@ async def analyze_videos(req: AnalyzeRequest):
                     },
                     "hook_analysis": session_meta.get("hook_analysis", ""),
                     "is_mock_analysis": session_meta.get("is_mock_analysis", False),
-                    "chat_history": session_meta.get("chat_history", [])
+                    "chat_history": session_meta.get("chat_history", []),
+                    "session_id": session_id
                 }})
             except Exception as e:
                 # If an error wasn't already caught and queued, catch it here

@@ -63,14 +63,13 @@ class SimpleVectorStore:
 
 
 # ---------------------------------------------------------------------------
-# Try to import ChromaDB; fall back to SimpleVectorStore if unavailable.
-# ---------------------------------------------------------------------------
-CHROMA_AVAILABLE = False
+# Try to import Pinecone; fall back to SimpleVectorStore if unavailable
+PINECONE_AVAILABLE = False
 try:
-    import chromadb
-    CHROMA_AVAILABLE = True
+    from pinecone import Pinecone
+    PINECONE_AVAILABLE = True
 except ImportError:
-    logger.warning("chromadb not installed. Falling back to SimpleVectorStore.")
+    logger.warning("pinecone-client not installed. Falling back to SimpleVectorStore.")
 
 
 # ---------------------------------------------------------------------------
@@ -78,65 +77,22 @@ except ImportError:
 # ---------------------------------------------------------------------------
 class VectorStoreManager:
     def __init__(self):
-        self.chroma_client: Any = None
-        self.collection: Any = None
+        self.pinecone_client: Any = None
+        self.index: Any = None
         self.simple_store: Optional[SimpleVectorStore] = None
-        self.collection_name: str = "creatorjoy_replica_chunks"
-
-        if CHROMA_AVAILABLE:
+        
+        # We don't wipe pinecone automatically as it's a shared stateful resource
+        
+        if PINECONE_AVAILABLE and settings.pinecone_api_key:
             try:
-                self.chroma_client = chromadb.PersistentClient(path=settings.chroma_db_dir)
-                self.collection = self.chroma_client.get_or_create_collection(
-                    name=self.collection_name
-                )
-                logger.info(f"ChromaDB initialised collection: {self.collection_name}")
-
-                # Auto-clear stale data if the embedding model has changed.
-                self._ensure_embedding_mode_consistency()
-
+                self.pinecone_client = Pinecone(api_key=settings.pinecone_api_key)
+                self.index = self.pinecone_client.Index(settings.pinecone_index_name)
+                logger.info(f"Pinecone initialised targeting index: {settings.pinecone_index_name}")
             except Exception as e:
-                logger.error(
-                    f"Failed to initialise ChromaDB: {e}. Falling back to SimpleVectorStore."
-                )
+                logger.error(f"Failed to initialise Pinecone: {e}. Falling back to SimpleVectorStore.")
                 self.simple_store = SimpleVectorStore()
         else:
             self.simple_store = SimpleVectorStore()
-
-    # ------------------------------------------------------------------
-    # Embedding model consistency guard
-    # ------------------------------------------------------------------
-    def _ensure_embedding_mode_consistency(self):
-        """
-        Checks whether the indexed embeddings were produced by the same model
-        that is currently active. If not (e.g. switching from mock → google),
-        wipes the collection so stale entries don't pollute semantic search.
-        """
-        expected_mode = _current_embedding_mode()
-
-        try:
-            # Peek at the first document to read its stored embedding mode tag.
-            peek = self.collection.peek(limit=1)
-            if peek and peek.get("metadatas") and peek["metadatas"]:
-                stored_mode = peek["metadatas"][0].get(EMBEDDING_MODE_METADATA_KEY)
-                if stored_mode and stored_mode != expected_mode:
-                    logger.warning(
-                        f"Embedding mode mismatch: stored='{stored_mode}', current='{expected_mode}'. "
-                        "Wiping ChromaDB collection to force re-indexing with real embeddings."
-                    )
-                    self._wipe_collection()
-        except Exception as e:
-            logger.warning(f"Could not verify embedding mode consistency: {e}")
-
-    def _wipe_collection(self):
-        """Deletes and recreates the ChromaDB collection."""
-        try:
-            self.chroma_client.delete_collection(self.collection_name)
-            self.collection = self.chroma_client.get_or_create_collection(
-                name=self.collection_name
-            )
-            logger.info("ChromaDB collection wiped and recreated successfully.")
-        except Exception as e:
-            logger.error(f"Failed to wipe ChromaDB collection: {e}")
 
     # ------------------------------------------------------------------
     # Embeddings
@@ -376,15 +332,24 @@ class VectorStoreManager:
         else:
             try:
                 embeddings = self.get_embeddings(texts)
-                # Use upsert so re-ingesting the same video doesn't create duplicates.
-                self.collection.upsert(
-                    embeddings=embeddings,
-                    documents=texts,
-                    metadatas=metadatas,
-                    ids=ids,
-                )
+                
+                # For Pinecone, we must store the text inside the metadata
+                vectors_to_upsert = []
+                for i in range(len(chunks)):
+                    # Merge the text into metadata for Pinecone retrieval
+                    meta = metadatas[i].copy()
+                    meta["text"] = texts[i]
+                    
+                    vectors_to_upsert.append({
+                        "id": ids[i],
+                        "values": embeddings[i],
+                        "metadata": meta
+                    })
+                
+                # Upsert to Pinecone
+                self.index.upsert(vectors=vectors_to_upsert)
             except Exception as e:
-                logger.error(f"ChromaDB upsert failed: {e}. Falling back to simple store.")
+                logger.error(f"Pinecone upsert failed: {e}. Falling back to simple store.")
                 if not self.simple_store:
                     self.simple_store = SimpleVectorStore()
                 self.simple_store.add_documents(texts, metadatas, ids)
@@ -405,39 +370,64 @@ class VectorStoreManager:
 
         if self.simple_store:
             raw_results = self.simple_store.query(query, n_results=n_results * 3, video_ids=video_ids)
+            
+            if raw_results and "documents" in raw_results and raw_results["documents"]:
+                docs = raw_results["documents"][0]
+                metas = raw_results["metadatas"][0]
+
+                for doc, meta in zip(docs, metas):
+                    if meta and meta.get("video_id") in video_ids:
+                        results.append({
+                            "text": doc,
+                            "video_id": meta.get("video_id"),
+                            "start_time": meta.get("start_time"),
+                        })
+                        if len(results) >= n_results:
+                            break
         else:
             try:
                 query_embeddings = self.get_query_embedding(query)
-                # Retrieve extra candidates for in-memory filtering by video_id
-                raw_results = self.collection.query(
-                    query_embeddings=query_embeddings,
-                    n_results=min(n_results * 4, 30),
+                
+                # Pinecone query
+                response = self.index.query(
+                    vector=query_embeddings[0],
+                    top_k=n_results * 2,  # Fetch extra to be safe
+                    filter={"video_id": {"$in": video_ids}},
+                    include_metadata=True
                 )
+                
+                for match in response.matches:
+                    meta = match.metadata
+                    if meta:
+                        results.append({
+                            "text": meta.get("text", ""),
+                            "video_id": meta.get("video_id"),
+                            "start_time": meta.get("start_time"),
+                        })
+                        if len(results) >= n_results:
+                            break
+
             except Exception as e:
-                logger.error(f"ChromaDB query failed: {e}.")
+                logger.error(f"Pinecone query failed: {e}.")
                 if self.simple_store:
-                    raw_results = self.simple_store.query(query, n_results=n_results * 3)
+                    raw_results = self.simple_store.query(query, n_results=n_results * 3, video_ids=video_ids)
+                    if raw_results and "documents" in raw_results and raw_results["documents"]:
+                        docs = raw_results["documents"][0]
+                        metas = raw_results["metadatas"][0]
+                        for doc, meta in zip(docs, metas):
+                            if meta and meta.get("video_id") in video_ids:
+                                results.append({
+                                    "text": doc,
+                                    "video_id": meta.get("video_id"),
+                                    "start_time": meta.get("start_time"),
+                                })
+                                if len(results) >= n_results:
+                                    break
                 else:
                     return []
 
-        # Parse and filter by video_ids
-        if raw_results and "documents" in raw_results and raw_results["documents"]:
-            docs = raw_results["documents"][0]
-            metas = raw_results["metadatas"][0]
-
-            for doc, meta in zip(docs, metas):
-                if meta and meta.get("video_id") in video_ids:
-                    results.append({
-                        "text": doc,
-                        "video_id": meta.get("video_id"),
-                        "start_time": meta.get("start_time"),
-                    })
-                    if len(results) >= n_results:
-                        break
-
         logger.info(f"Vector store returned {len(results)} relevant chunks.")
         return results
-
 
 # Singleton — shared across the entire backend process.
 vector_store = VectorStoreManager()

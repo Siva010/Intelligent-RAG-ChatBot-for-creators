@@ -68,12 +68,18 @@ export default function ChatConsole({
       return parseCitations(node, keyPrefix);
     }
     if (Array.isArray(node)) {
-      return node.map((child, i) => processCitationsInNode(child, `${keyPrefix}-${i}`));
+      return node.map((child, i) => {
+        const processed = processCitationsInNode(child, `${keyPrefix}-${i}`);
+        if (React.isValidElement(processed) && !processed.key) {
+          return React.cloneElement(processed, { key: `${keyPrefix}-${i}` } as React.Attributes);
+        }
+        return processed;
+      });
     }
     if (React.isValidElement(node)) {
       const el = node as React.ReactElement<{ children?: React.ReactNode }>;
       const newChildren = processCitationsInNode(el.props.children, keyPrefix);
-      return React.cloneElement(el, {}, newChildren);
+      return React.cloneElement(el, { key: el.key || keyPrefix } as React.Attributes, newChildren);
     }
     return node;
   };
@@ -174,7 +180,7 @@ export default function ChatConsole({
         <span className="text-[10px] uppercase font-bold tracking-widest text-zinc-500">Active Session</span>
       </div>
 
-      <div 
+      <div
         ref={scrollContainerRef}
         onScroll={handleScroll}
         className="flex-1 overflow-y-auto p-6 space-y-6"
@@ -193,32 +199,32 @@ export default function ChatConsole({
           messages
             .filter(msg => msg.content !== "Start Comparative Analysis Audit")
             .map((msg, idx) => (
-            <div
-              key={idx}
-              className={`flex gap-4 max-w-3xl animate-slide-up ${msg.role === 'user' ? 'ml-auto flex-row-reverse' : ''
-                }`}
-            >
-              {/* Avatar */}
               <div
-                className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center border ${msg.role === 'user'
-                  ? 'bg-zinc-800 border-zinc-700 text-zinc-200'
-                  : 'bg-sky-500/10 border-sky-500/20 text-sky-400'
+                key={idx}
+                className={`flex gap-4 max-w-3xl animate-slide-up ${msg.role === 'user' ? 'ml-auto flex-row-reverse' : ''
                   }`}
               >
-                {msg.role === 'user' ? <User className="w-4 h-4" /> : <Bot className="w-4 h-4" />}
-              </div>
+                {/* Avatar */}
+                <div
+                  className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center border ${msg.role === 'user'
+                    ? 'bg-zinc-800 border-zinc-700 text-zinc-200'
+                    : 'bg-sky-500/10 border-sky-500/20 text-sky-400'
+                    }`}
+                >
+                  {msg.role === 'user' ? <User className="w-4 h-4" /> : <Bot className="w-4 h-4" />}
+                </div>
 
-              {/* Bubble */}
-              <div
-                className={`flex-1 p-4 rounded-2xl border ${msg.role === 'user'
-                  ? 'bg-zinc-800/40 border-zinc-700/50 text-zinc-200 rounded-tr-none'
-                  : 'bg-zinc-900/40 border-zinc-800 text-zinc-300 rounded-tl-none'
-                  }`}
-              >
-                <MarkdownRenderer content={msg.content} />
+                {/* Bubble */}
+                <div
+                  className={`flex-1 p-4 rounded-2xl border ${msg.role === 'user'
+                    ? 'bg-zinc-800/40 border-zinc-700/50 text-zinc-200 rounded-tr-none'
+                    : 'bg-zinc-900/40 border-zinc-800 text-zinc-300 rounded-tl-none'
+                    }`}
+                >
+                  <MarkdownRenderer content={msg.content} />
+                </div>
               </div>
-            </div>
-          ))
+            ))
         )}
 
         {/* Quick prompt chips - shown when chat is empty or just has the initial audit */}

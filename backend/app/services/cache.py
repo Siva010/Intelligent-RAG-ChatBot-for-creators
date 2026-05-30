@@ -1,45 +1,53 @@
-import time
+import json
+import logging
 from typing import Dict, Any, Optional
+import redis
+from app.config import settings
 
-class MemoryCache:
-    def __init__(self, ttl_seconds: int = 3600, max_size: int = 100):
+logger = logging.getLogger(__name__)
+
+class RedisCache:
+    def __init__(self, redis_url: str, ttl_seconds: int = 3600):
         self.ttl = ttl_seconds
-        self.max_size = max_size
-        self.store: Dict[str, Dict[str, Any]] = {}
-
-    def _cleanup_expired(self):
-        now = time.time()
-        expired_keys = [
-            k for k, entry in self.store.items() 
-            if now - entry["timestamp"] > self.ttl
-        ]
-        for k in expired_keys:
-            del self.store[k]
+        try:
+            self.client: Optional[redis.Redis] = redis.Redis.from_url(redis_url, decode_responses=True)
+            # Test connection
+            self.client.ping()
+            self.is_connected = True
+            logger.info(f"Connected to Redis cache at {redis_url}")
+        except redis.ConnectionError as e:
+            logger.warning(f"Failed to connect to Redis at {redis_url}: {e}. Falling back to a dummy cache.")
+            self.is_connected = False
+            self.client = None
 
     def get(self, url: str) -> Optional[Dict[str, Any]]:
-        self._cleanup_expired()
-        
-        entry = self.store.get(url)
-        if entry:
-            # Update timestamp for Least Recently Used behavior or just keep it simple
-            return entry["data"]
-        return None
+        if not self.is_connected or not self.client:
+            return None
+        try:
+            data_str = self.client.get(url)
+            if data_str:
+                return json.loads(data_str)
+            return None
+        except Exception as e:
+            logger.error(f"Redis get error for {url}: {e}")
+            return None
 
     def set(self, url: str, data: Dict[str, Any]) -> None:
-        self._cleanup_expired()
-        
-        # Enforce max size limit by removing the oldest entry if full
-        if len(self.store) >= self.max_size:
-            oldest_key = min(self.store.keys(), key=lambda k: self.store[k]["timestamp"])
-            del self.store[oldest_key]
-            
-        self.store[url] = {
-            "timestamp": time.time(),
-            "data": data
-        }
+        if not self.is_connected or not self.client:
+            return
+        try:
+            data_str = json.dumps(data)
+            self.client.set(url, data_str, ex=self.ttl)
+        except Exception as e:
+            logger.error(f"Redis set error for {url}: {e}")
 
     def clear(self) -> None:
-        self.store.clear()
+        if not self.is_connected or not self.client:
+            return
+        try:
+            self.client.flushdb()
+        except Exception as e:
+            logger.error(f"Redis clear error: {e}")
 
 # Global singleton instance of cache
-video_cache = MemoryCache()
+video_cache = RedisCache(redis_url=settings.redis_url, ttl_seconds=settings.cache_expiry_seconds)

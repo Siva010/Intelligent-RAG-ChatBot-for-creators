@@ -461,7 +461,28 @@ async def astream_session(
     Using astream_events lets the hook analysis appear in the chat as it's generated,
     satisfying the spec requirement that all responses must stream.
     """
-    config = {"configurable": {"thread_id": session_id}}
+    config: RunnableConfig = {"configurable": {"thread_id": session_id}}
+    
+    # Check if this thread already has an initialized session
+    state_info = agent_graph.get_state(config)
+    if state_info and state_info.values and state_info.values.get("hook_analysis"):
+        logger.info(f"Session {session_id} already exists. Returning cached chat history.")
+        hook_analysis = state_info.values.get("hook_analysis", "")
+        is_mock = state_info.values.get("is_mock_analysis", False)
+        chat_history = []
+        for m in state_info.values.get("messages", []):
+            if m.type in ("human", "ai"):
+                chat_history.append({
+                    "role": "user" if m.type == "human" else "assistant",
+                    "content": extract_text(m.content),
+                })
+        yield ("done", {
+            "hook_analysis": hook_analysis,
+            "is_mock_analysis": is_mock,
+            "chat_history": chat_history,
+        })
+        return
+
     initial_state = {
         "messages": [HumanMessage(content="Start Comparative Analysis Audit")],
         "video_a": video_a,
@@ -547,7 +568,7 @@ async def stream_chat_message_sse(session_id: str, message: str):
     Uses LangGraph's native astream_events (v2) to capture true LLM output chunks 
     safely across different LangGraph versions.
     """
-    config = {"configurable": {"thread_id": session_id}}
+    config: RunnableConfig = {"configurable": {"thread_id": session_id}}
     
     state_info = agent_graph.get_state(config)
     if not state_info or not state_info.values:

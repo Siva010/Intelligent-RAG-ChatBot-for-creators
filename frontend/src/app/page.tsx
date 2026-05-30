@@ -25,17 +25,9 @@ export default function Home() {
   const [isChatLoading, setIsChatLoading] = useState(false);
   const [loadingStep, setLoadingStep] = useState<string>('Scraping & Indexing Video Transcripts...');
 
-  // Generate a unique session ID on component mount, persisted in sessionStorage
-  // so that rapid re-mounts within the same tab don't orphan LangGraph sessions.
   useEffect(() => {
-    const stored = sessionStorage.getItem('cj_session_id');
-    if (stored) {
-      setSessionId(stored);
-    } else {
-      const newId = 'session_' + Math.random().toString(36).substring(2, 11);
-      sessionStorage.setItem('cj_session_id', newId);
-      setSessionId(newId);
-    }
+    // Session ID is now generated deterministically by the backend based on URLs
+    // We start empty and update it when the analysis completes
   }, []);
 
   const handleIngest = async (e: React.FormEvent) => {
@@ -110,6 +102,9 @@ export default function Home() {
               setVideoA(msg.data.video_a);
               setVideoB(msg.data.video_b);
               setIsMockAnalysis(msg.data.is_mock_analysis || false);
+              if (msg.data.session_id) {
+                setSessionId(msg.data.session_id);
+              }
               if (msg.data.chat_history && msg.data.chat_history.length > 0) {
                 setChatMessages(msg.data.chat_history);
               }
