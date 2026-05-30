@@ -10,7 +10,6 @@ from app.services.ingestion import get_ingestor_for_url
 from app.services.cache import video_cache
 from app.services.vector_store import vector_store
 from app.services.agent import astream_session, stream_chat_message_sse
-from app.services.channel_analytics import generate_mock_channel_analytics
 
 app = FastAPI(
     title="CreatorJoy Replica API",
@@ -174,15 +173,6 @@ async def chat_stream(req: ChatRequest):
     generator = stream_chat_message_sse(req.session_id, req.message)
     return EventSourceResponse(generator)
 
-@app.get("/channel/{channel_id}/analytics")
-async def get_channel_analytics(channel_id: str):
-    """
-    Returns channel-level analytical data (mocked for demo purposes).
-    """
-    if not channel_id:
-        raise HTTPException(status_code=400, detail="channel_id is required.")
-    
-    return generate_mock_channel_analytics(channel_id)
 
 if __name__ == "__main__":
     import uvicorn

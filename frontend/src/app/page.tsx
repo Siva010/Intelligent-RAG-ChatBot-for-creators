@@ -4,8 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { AlertCircle, RefreshCw, BarChart3, Sparkles } from 'lucide-react';
 import ChatConsole, { ChatMessage } from '../components/ChatConsole';
 import AnalyticalHeader, { VideoData } from '../components/AnalyticalHeader';
-import MultiModalMockup from '../components/MultiModalMockup';
-import ScriptRewriterAccordion from '../components/ScriptRewriterAccordion';
+
 
 export default function Home() {
   const [urlA, setUrlA] = useState('');
@@ -406,21 +405,7 @@ export default function Home() {
               </div>
             </div>
 
-            {/* Multi-Modal Pro Feature Mockup */}
-            <MultiModalMockup />
 
-            {/* Script Rewriter Integration Accordion */}
-            {(() => {
-              // Join all transcript entries from the first 15 seconds (mirrors backend isolate_hooks)
-              const hookText = videoA?.transcript
-                ? videoA.transcript
-                    .filter((entry) => (entry.start ?? 0) < 15)
-                    .map((entry) => entry.text)
-                    .join(' ')
-                    .trim()
-                : '';
-              return <ScriptRewriterAccordion originalText={hookText || videoA?.transcript?.[0]?.text || ''} />;
-            })()}
 
             <div className="pb-8"></div>
           </section>
