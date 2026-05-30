@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { ArrowRight, AlertCircle, RefreshCw, BarChart3, Search, Sparkles, Wand2 } from 'lucide-react';
+import { AlertCircle, RefreshCw, BarChart3, Sparkles } from 'lucide-react';
 import ChatConsole, { ChatMessage } from '../components/ChatConsole';
 import AnalyticalHeader, { VideoData } from '../components/AnalyticalHeader';
 import MultiModalMockup from '../components/MultiModalMockup';
@@ -116,15 +116,15 @@ export default function Home() {
             } else if (msg.type === 'error') {
               throw new Error(msg.message);
             }
-          } catch (e: any) {
+          } catch (e: unknown) {
             if (!(e instanceof SyntaxError)) throw e;
             // incomplete line still in sseBuffer — wait for next read
           }
         }
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("Ingestion failed: ", err);
-      setError(err.message || 'An unexpected error occurred.');
+      setError(err instanceof Error ? err.message : 'An unexpected error occurred.');
     } finally {
       setIsLoading(false);
       setLoadingStep('Scraping & Indexing Video Transcripts...');
@@ -213,11 +213,11 @@ export default function Home() {
           }
         }
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error(err);
       setChatMessages(prev => [
         ...prev,
-        { role: 'assistant', content: `Error: ${err.message || 'Could not stream response.'}` }
+        { role: 'assistant', content: `Error: ${err instanceof Error ? err.message : 'Could not stream response.'}` }
       ]);
     } finally {
       setIsChatLoading(false);
@@ -345,7 +345,7 @@ export default function Home() {
                 <div className="p-6 rounded-3xl bg-[#0D182A]/80 border border-white/5 h-full flex flex-col">
                   <h3 className="text-[10px] font-black uppercase tracking-widest text-sky-400 mb-6 flex items-center gap-2">
                     <Sparkles className="w-4 h-4 text-sky-400" />
-                    Doctor's Diagnostics Summary
+                    Doctor&apos;s Diagnostics Summary
                   </h3>
                   
                   {isLoading ? (

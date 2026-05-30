@@ -70,7 +70,7 @@ export default function ScriptRewriterAccordion({ originalText }: ScriptRewriter
             <div className="lg:col-span-1">
               <h3 className="text-sm font-semibold text-zinc-500 uppercase tracking-wider mb-3">Original Hook</h3>
               <div className="p-4 bg-[#11223B] border border-white/10 rounded-xl text-zinc-300 text-sm italic h-full">
-                "{originalText || "In this video we are going to talk about how to grow your channel using a few tips and tricks that I have learned."}"
+                &quot;{originalText || "In this video we are going to talk about how to grow your channel using a few tips and tricks that I have learned."}&quot;
               </div>
             </div>
 
@@ -95,7 +95,7 @@ export default function ScriptRewriterAccordion({ originalText }: ScriptRewriter
                       </button>
                     </div>
                     <p className="text-zinc-300 text-sm leading-relaxed">
-                      "{variant.text}"
+                      &quot;{variant.text}&quot;
                     </p>
                   </div>
                 ))}

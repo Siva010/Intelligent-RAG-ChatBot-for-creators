@@ -1,12 +1,13 @@
 "use client";
 
 import React, { useState } from 'react';
-import { LineChart, Line, BarChart, Bar, Cell, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, ResponsiveContainer } from 'recharts';
+import { LineChart, Line, BarChart, Bar, Cell, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer } from 'recharts';
 import { Search, TrendingUp, Activity, PlaySquare, AlertTriangle, Lock } from 'lucide-react';
 
 export default function ChannelAnalytics() {
   const [channelId, setChannelId] = useState('');
   const [loading, setLoading] = useState(false);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [data, setData] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -24,8 +25,8 @@ export default function ChannelAnalytics() {
       if (!response.ok) throw new Error('Failed to fetch analytics');
       const result = await response.json();
       setData(result);
-    } catch (err: any) {
-      setError(err.message || 'An error occurred while fetching data');
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'An error occurred while fetching data');
     } finally {
       setLoading(false);
     }
@@ -39,12 +40,13 @@ export default function ChannelAnalytics() {
             Channel Analytics
             <span className="text-[10px] px-2 py-0.5 font-bold border border-amber-500/30 rounded-full bg-amber-500/10 text-amber-500 tracking-widest uppercase">🚧 Under Construction</span>
           </h1>
-          <p className="text-zinc-400">Track hook effectiveness across a creator's catalog and benchmark against competitors.</p>
+          <p className="text-zinc-400">Track hook effectiveness across a creator&apos;s catalog and benchmark against competitors.</p>
         </div>
         {data && (
           <div className="flex items-center gap-4 animate-in fade-in duration-500">
             <h2 className="text-xl font-bold text-white">{data.channel_name}</h2>
             {data.profile_pic && (
+              // eslint-disable-next-line @next/next/no-img-element
               <img 
                 src={data.profile_pic} 
                 alt={`${data.channel_name} Profile`} 
@@ -93,10 +95,10 @@ export default function ChannelAnalytics() {
               <div className="flex flex-col gap-2">
                 <h3 className="text-lg font-semibold text-amber-500">Prototype Warning: Mock Retention Data</h3>
                 <p className="text-sm text-zinc-300 leading-relaxed">
-                  The retention graphs below are currently populated with <strong>simulated mock data</strong> for demonstration purposes. YouTube's public API does not expose factual audience retention metrics for third-party videos.
+                  The retention graphs below are currently populated with <strong>simulated mock data</strong> for demonstration purposes. YouTube&apos;s public API does not expose factual audience retention metrics for third-party videos.
                 </p>
                 <p className="text-sm text-zinc-300 leading-relaxed">
-                  To view actual, factual retention curves, a creator must explicitly grant this application access to their private data using <strong>Google's OAuth 2.0</strong> and the <strong>YouTube Analytics API</strong>.
+                  To view actual, factual retention curves, a creator must explicitly grant this application access to their private data using <strong>Google&apos;s OAuth 2.0</strong> and the <strong>YouTube Analytics API</strong>.
                 </p>
               </div>
             </div>
@@ -156,7 +158,7 @@ export default function ChannelAnalytics() {
                     />
                     <Bar dataKey="retention" radius={[4, 4, 0, 0]} name="Avg Retention (15s)">
                       {
-                        data.benchmarks.map((entry: any, index: number) => (
+                        data.benchmarks.map((entry: { fill: string }, index: number) => (
                           <Cell key={`cell-${index}`} fill={entry.fill} />
                         ))
                       }
@@ -177,7 +179,7 @@ export default function ChannelAnalytics() {
             </div>
             
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              {data.top_hooks.map((hook: any) => (
+              {data.top_hooks.map((hook: { id: string, title: string, hook_text: string, sentiment: string, views: number }) => (
                 <div key={hook.id} className="bg-zinc-950 border border-zinc-800 rounded-xl p-5 flex flex-col gap-3 transition-colors hover:border-zinc-700">
                   <div className="flex justify-between items-start">
                     <h3 className="font-medium text-zinc-100 line-clamp-2 text-sm">{hook.title}</h3>
@@ -186,7 +188,7 @@ export default function ChannelAnalytics() {
                       Locked
                     </span>
                   </div>
-                  <p className="text-zinc-400 text-sm italic border-l-2 border-zinc-700 pl-3">"{hook.hook_text}"</p>
+                  <p className="text-zinc-400 text-sm italic border-l-2 border-zinc-700 pl-3">&quot;{hook.hook_text}&quot;</p>
                   <div className="mt-auto pt-4 flex justify-between items-center text-xs text-zinc-500">
                     <span>Sentiment: <span className="text-zinc-300">{hook.sentiment}</span></span>
                     <span>{(hook.views / 1000000).toFixed(1)}M Views</span>

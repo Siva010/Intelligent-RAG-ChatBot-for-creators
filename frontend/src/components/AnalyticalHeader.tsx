@@ -1,5 +1,5 @@
 import React from 'react';
-import { Play, ThumbsUp, MessageSquare, Percent, Calendar, Hash, Users, ExternalLink } from 'lucide-react';
+import { Play, ThumbsUp, MessageSquare, Percent, Calendar, Users } from 'lucide-react';
 
 export interface VideoMetrics {
   views: number;
@@ -92,6 +92,7 @@ export default function AnalyticalHeader({ videoA, videoB }: AnalyticalHeaderPro
               allowFullScreen
             />
           ) : data.thumbnail_url ? (
+            // eslint-disable-next-line @next/next/no-img-element
             <img
               src={data.thumbnail_url}
               alt={data.title}

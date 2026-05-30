@@ -36,7 +36,7 @@ export default function TrendAlertsPage() {
               <div className="flex items-center justify-between p-4 bg-[#09111E] border border-white/5 rounded-xl">
                 <div>
                   <h3 className="text-white font-medium">Finance & Crypto Niche</h3>
-                  <p className="text-sm text-zinc-500">Tracking: "investing", "crypto", "@AlexHormozi"</p>
+                  <p className="text-sm text-zinc-500">Tracking: &quot;investing&quot;, &quot;crypto&quot;, &quot;@AlexHormozi&quot;</p>
                 </div>
                 <div className="flex items-center gap-2">
                   <span className="px-2 py-1 bg-emerald-500/10 text-emerald-400 text-xs font-medium rounded border border-emerald-500/20">Active</span>
@@ -46,7 +46,7 @@ export default function TrendAlertsPage() {
               <div className="flex items-center justify-between p-4 bg-[#09111E] border border-white/5 rounded-xl">
                 <div>
                   <h3 className="text-white font-medium">Tech Reviews</h3>
-                  <p className="text-sm text-zinc-500">Tracking: "apple vision pro", "M3 macbook"</p>
+                  <p className="text-sm text-zinc-500">Tracking: &quot;apple vision pro&quot;, &quot;M3 macbook&quot;</p>
                 </div>
                 <div className="flex items-center gap-2">
                   <span className="px-2 py-1 bg-zinc-500/10 text-zinc-400 text-xs font-medium rounded border border-zinc-600">Paused</span>
