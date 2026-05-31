@@ -1,10 +1,10 @@
-# 🚀 CreatorJoy Replica | AI Social Video Hook Analyzer
+# Intelligent-RAG-ChatBot for Creators
 
 ![Project Status](https://img.shields.io/badge/Status-Demo_Ready-brightgreen)
 ![Architecture](https://img.shields.io/badge/Architecture-Event_Driven-blue)
 ![Stack](https://img.shields.io/badge/Stack-FastAPI%20|%20Next.js%20|%20Celery-indigo)
 
-A full-stack, event-driven AI application that ingests two social video URLs (YouTube, TikTok, Instagram Reels), scrapes their transcripts, indexes semantic chunks, and provides a **RAG-powered Chat Interface** for users to audit and compare engagement hooks.
+A full-stack, event-driven AI application that ingests two social video URLs (YouTube, TikTok, Instagram Reels), scrapes their transcripts, indexes semantic chunks, and provides a **RAG-powered Chat Interface** for users to audit and compare engagement hooks with grounded citations.
 
 Built as a technical showcase demonstrating **production-grade AI orchestration patterns**, fault tolerance, and graceful degradation.
 
