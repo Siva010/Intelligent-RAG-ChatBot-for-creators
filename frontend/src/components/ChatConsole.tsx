@@ -1,4 +1,4 @@
-import React, { useRef, useEffect, useState, useCallback } from 'react';
+import React, { useRef, useEffect, useState, useCallback, useMemo } from 'react';
 import { Send, Bot, User, Loader2, PlayCircle, Zap } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import { VideoData } from './AnalyticalHeader';
@@ -102,13 +102,13 @@ export default function ChatConsole({
   const winner = engA >= engB ? 'Video A' : 'Video B';
   const loser = engA >= engB ? 'Video B' : 'Video A';
 
-  const dynamicPrompts = [
+  const dynamicPrompts = useMemo(() => [
     `Why did ${winner} get more engagement than ${loser}?`,
     "What's the engagement rate of each video?",
     "Compare the hooks in the first 5 seconds.",
     `Who's the creator of ${loser} and what's their follower count?`,
     `Suggest improvements for ${loser} based on what worked in ${winner}.`,
-  ];
+  ], [winner, loser]);
 
   const seekVideo = (videoLabel: string, timestamp: string) => {
     // Determine which video to target
