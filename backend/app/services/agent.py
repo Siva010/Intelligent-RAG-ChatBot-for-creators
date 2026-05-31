@@ -632,15 +632,30 @@ def stream_session_sync(
     yield ("hook_chunk", header)
 
     emitted_any = False
-    for event in agent_graph.stream_events(initial_state, config=config, version="v2"):
-        kind = event["event"]
-        if kind == "on_chat_model_stream":
-            token = event["data"]["chunk"].content
-            if token and isinstance(token, str):
-                emitted_any = True
-                yield ("hook_chunk", token)
+    
+    import asyncio
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    try:
+        agen = agent_graph.astream_events(initial_state, config=config, version="v2")
+        while True:
+            try:
+                event = loop.run_until_complete(agen.__anext__())
+                kind = event["event"]
+                if kind == "on_chat_model_stream":
+                    token = event["data"]["chunk"].content
+                    if token and isinstance(token, str):
+                        emitted_any = True
+                        yield ("hook_chunk", token)
+            except StopAsyncIteration:
+                break
+            except Exception as e:
+                logger.warning(f"Error during async event streaming: {e}")
+                break
+        final = loop.run_until_complete(agent_graph.aget_state(config))
+    finally:
+        loop.close()
 
-    final = agent_graph.get_state(config)
     hook_analysis = ""
     is_mock = False
     chat_history: List[Dict[str, str]] = []
