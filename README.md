@@ -1,96 +1,111 @@
-# Viral Script Doctor & RAG Intelligence Engine
+# 🚀 CreatorJoy Replica | AI Social Video Hook Analyzer
 
-Welcome to the Viral Script Doctor - a production-grade, highly-tuned Retrieval-Augmented Generation (RAG) application. It is designed to act as your social media strategist for creatos. By comparing video transcripts, analyzing performance metrics, and pinpointing the exact psychology behind a viral hook, it helps creators understand why a video succeeds. With memory-aware conversations and grounded, clickable citations.
+![Project Status](https://img.shields.io/badge/Status-Demo_Ready-brightgreen)
+![Architecture](https://img.shields.io/badge/Architecture-Event_Driven-blue)
+![Stack](https://img.shields.io/badge/Stack-FastAPI%20|%20Next.js%20|%20Celery-indigo)
 
----
+A full-stack, event-driven AI application that ingests two social video URLs (YouTube, TikTok, Instagram Reels), scrapes their transcripts, indexes semantic chunks, and provides a **RAG-powered Chat Interface** for users to audit and compare engagement hooks.
 
-## ✨ What's New? (Current State)
-
-We've evolved from a simple local demo to a robust, scalable system that respects your compute resources:
-- **Parallel Ingestion**: Sped up data crunching with ThreadPool-based parallel video ingestion.
-- **Resilient AI Pipelines**: Granular LLM progress streaming via SSE (Server-Sent Events) with Redis-backed reconnection logic, keeping you updated every step of the way.
-- **Smart Resource Management**: If you close your browser tab, our Celery workers immediately halt processing (revoking tasks on disconnect) to save precious compute and LLM credits.
-- **Interactive UI**: Citations aren't just text anymore—timestamp badges are now fully clickable and instantly seek to the exact moment in the embedded YouTube iframes.
-- **Robust Memory**: We've introduced robust SQLite checkpointer singletons for memory-aware conversational flows, alongside ChromaDB vector fallbacks.
+Built as a technical showcase demonstrating **production-grade AI orchestration patterns**, fault tolerance, and graceful degradation.
 
 ---
 
 ## 🏗️ System Architecture
 
-The application is decoupled into a lightning-fast, async **FastAPI** backend and a sleek, premium dark-themed **Next.js** dashboard.
+The system utilizes an asynchronous, distributed architecture designed to prevent long-running AI/scraping tasks from blocking the main API thread.
 
-```text
-[ Next.js Frontend (Tailwind) ]
-               │
-      (HTTP / SSE Stream)
-               │
-               ▼
-   [ FastAPI Backend (Python) ] ◄──► [ MemoryCache & Redis SSE ]
-               │
-      ┌────────┴──────────────────────────┐
-      ▼                                   ▼
-[Scrapers / APIs]                 [LangGraph Agent] ◄──► [SQLite Checkpointer]
- - yt-dlp                           - State graph
- - youtube-transcript-api           - Prompt engineering
- - Whisper fallback stub            - Vector database router tool
-                                          │
-                                          ▼
-                              [Vector DB: Chroma / NumPy Fallback]
-                              - Hook isolation (first 15s)
-                              - Semantic chunking (350 words, 10% overlap)
-                              - 3072-dim Google Embeddings
+```mermaid
+graph TD
+    UI[Next.js Frontend] -->|HTTP POST| API[FastAPI Backend]
+    UI -.->|Server-Sent Events| API
+    
+    API -->|1. Enqueue Task| Redis[(Redis Broker)]
+    API -->|2. Return Task ID| UI
+    
+    Redis -->|Consume| Celery[Celery Worker]
+    
+    Celery -->|3. Scrape Transcripts| Apify[Apify / yt-dlp]
+    Celery -->|4. Generate Vectors| Embeddings[Embedding Model]
+    Celery -->|5. Index Data| Pinecone[(Pinecone / Chroma)]
+    Celery -->|6. Publish Progress| RedisPubSub((Redis Pub/Sub))
+    
+    RedisPubSub -.->|Stream Updates| API
+    
+    UI -->|Chat Query| LangGraph[LangGraph Agent]
+    LangGraph <-->|State Checkpoints| SQLite[(SQLite)]
+    LangGraph <-->|Similarity Search| Pinecone
+    LangGraph -->|LLM Stream| UI
+```
+
+### 🧠 Core Technical Decisions & Patterns
+
+#### 1. Graceful Degradation (Hardware-Aware Embeddings)
+To ensure the application never crashes in a restricted environment (e.g., missing API keys), the Vector Store implements a tiered fallback pattern isolated via namespaces:
+* **Tier 1:** Google Gemini `gemini-embedding-001` (Preferred)
+* **Tier 2:** OpenAI `text-embedding-3-small` (Fallback)
+* **Tier 3:** Numpy deterministic mock vectors (Failsafe for CI/CD or local testing without keys)
+
+#### 2. Stateful Agentic Workflows (LangGraph)
+Unlike standard stateless LLM wrappers, the Chat interface is powered by a **LangGraph State Machine**. 
+* Thread memory is asynchronously persisted to SQLite (`aiosqlite`).
+* This allows users to seamlessly resume analysis threads across page reloads without losing LLM context.
+
+#### 3. Real-Time Streaming UI (Server-Sent Events)
+WebSockets can be overkill and difficult to load-balance for one-way server-to-client updates. 
+* We use **SSE (Server-Sent Events)** piped over a Redis Pub/Sub channel to stream Celery worker progress (scraping, chunking, indexing) and LLM token generation directly to the React Server Components.
+* Features a 90-second `AbortController` timeout to gracefully handle upstream LLM API rate limits.
+
+---
+
+## 🚀 Getting Started
+
+### Prerequisites
+* Python 3.10+
+* Node.js 18+
+* Redis (Local or Upstash Serverless)
+
+### 1. Backend Setup
+```bash
+cd backend
+python -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
+pip install -r requirements.txt
+```
+
+Create a `.env` file in the `backend` directory:
+```env
+GOOGLE_API_KEY="your-gemini-key"
+REDIS_URL="redis://localhost:6379/0" # Fully supports Upstash rediss:// strings
+PINECONE_API_KEY="your-pinecone-key"
+```
+
+Start the FastAPI Server and the Celery Worker (in separate terminals):
+```bash
+# Terminal 1: API Server
+uvicorn app.main:app --reload
+
+# Terminal 2: Background Task Worker
+celery -A app.worker.celery_app worker --loglevel=info --pool=threads
+```
+
+### 2. Frontend Setup
+```bash
+cd frontend
+npm install
+npm run dev
 ```
 
 ---
 
-## 🛠️ Getting Started
+## 🔮 Future Scalability Path
 
-### Prerequisites
-- Python 3.13+
-- Node.js 20+ & npm
-- (Optional but recommended) Redis for robust SSE stream reconnections.
+If given a production budget and a 3-month roadmap, I would evolve this architecture by:
 
-### Backend Setup
-1. Open a terminal, navigate to the `backend/` directory:
-   ```bash
-   cd backend
-   ```
-2. Activate the python virtual environment:
-   - **Windows**: `.\venv\Scripts\activate`
-   - **macOS/Linux**: `source venv/bin/activate`
-3. Create a `.env` file in the `backend/` directory and configure your Google Gemini API Key (we also have mock fallbacks if you're just testing the UI):
-   ```env
-   GOOGLE_API_KEY=your_google_ai_studio_api_key_here
-   ```
-4. Start the FastAPI development server:
-   ```bash
-   uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
-   ```
-   *Note: For full background processing, ensure your Celery worker is running.*
-
-### Frontend Setup
-1. Open a new terminal, navigate to the `frontend/` directory:
-   ```bash
-   cd frontend
-   ```
-2. Start the Next.js dev server:
-   ```bash
-   npm run dev
-   ```
-   The frontend dashboard will be waiting for you at `http://localhost:3000`.
+1. **User Authentication & Tenant Isolation:** Replacing the `"anonymous"` thread ID fallback with a NextAuth (OAuth) integration, mapping Postgres User UUIDs to Pinecone namespaces to ensure strict data governance.
+2. **Async Webhooks vs. Synchronous Workers:** Currently, the Celery worker blocks a thread waiting for the Apify scraper to finish. At scale, this would exhaust the worker pool. I would decouple this by having the scraper hit a `/webhook/scraper-complete` FastAPI route, which would resume the DAG.
+3. **Managed State:** Migrating the local `aiosqlite` LangGraph checkpointer to a managed Postgres instance, and local Redis to Upstash/ElastiCache.
+4. **Google BatchEmbedContents:** Further optimize vector indexing speeds by utilizing maximum batch sizes for the Google GenAI embedding endpoints. (Note: Initial batching is already implemented).
 
 ---
 
-## 📈 Roadmap for Scale
-
-As we aim to empower 10,000+ creators daily, here is where we are heading next:
-
-### 1. Cost & Context Window Optimization
-- **Caching Tier**: Moving from in-memory dictionaries to a dedicated Redis cluster for 24-hour video caching to cut scraper/API costs on repeat audits.
-- **Model Tiering**: Using faster models (`gemini-2.5-flash`) for simple retrievals and reserving heavier models (`gemini-2.5-pro`) for complex script rewriting.
-- **Strict Vector Routing**: Supplying the LLM with only the most semantically relevant transcript chunks (top 6) to keep the context window small, accurate, and cheap.
-
-### 2. Distributed Infrastructure
-- **Hosted Vector DB**: Transitioning to Pinecone or Milvus with tenant partitioning for robust cross-tenant security.
-- **Advanced Scraping**: Leveraging Proxy rotation (ScrapeOps/Bright Data) to bypass platform limits, and Serverless Whisper GPU containers (RunPod/Replicate) for robust fallback transcription.
-- **Serverless Scaling**: Auto-scaling FastAPI on AWS ECS/Fargate and serving the UI via Vercel for instantaneous global delivery.
+*Designed and engineered as a demonstration of production-grade AI system architecture.*
