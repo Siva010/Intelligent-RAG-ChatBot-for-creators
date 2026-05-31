@@ -64,7 +64,8 @@ def analyze_task(task_id: str, url_a: str, url_b: str, session_id: str):
         with ThreadPoolExecutor(max_workers=2) as ex:
             fut_a = ex.submit(_ingest, url_a, "Video A")
             fut_b = ex.submit(_ingest, url_b, "Video B")
-            data_a, data_b = fut_a.result(), fut_b.result()
+            data_a = fut_a.result()
+            data_b = fut_b.result()
 
         try:
             with ThreadPoolExecutor(max_workers=2) as ex:
