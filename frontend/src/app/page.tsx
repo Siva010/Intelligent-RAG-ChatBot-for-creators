@@ -168,10 +168,17 @@ export default function Home() {
     setChatMessages(prev => [...prev, { role: 'user', content: userMessageContent }]);
 
     try {
+      // AbortController: if Gemini stalls or rate-limits mid-response,
+      // time out after 90 s instead of locking the input forever.
+      const chatController = new AbortController();
+      const chatTimeout = setTimeout(() => chatController.abort(), 90_000);
+
+      try {
       const response = await fetch(`${API_URL}/chat/stream`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ session_id: sessionId, message: userMessageContent }),
+        signal: chatController.signal,
       });
 
       if (!response.ok) {
@@ -219,6 +226,14 @@ export default function Home() {
           }
         }
       }
+      } catch (chatStreamErr: unknown) {
+        if (chatStreamErr instanceof Error && chatStreamErr.name === 'AbortError') {
+          throw new Error('Response timed out after 90 seconds. The AI may be busy — try again.');
+        }
+        throw chatStreamErr;
+      } finally {
+        clearTimeout(chatTimeout);
+      }
     } catch (err: unknown) {
       console.error(err);
       setChatMessages(prev => [
@@ -234,7 +249,7 @@ export default function Home() {
     <div className="min-h-screen text-zinc-100 flex flex-col selection:bg-indigo-500/30 selection:text-indigo-200">
 
       {/* Main Workspace Area */}
-      <main className="flex-1 max-w-7xl w-full mx-auto p-6 md:p-8 space-y-8">
+      <div className="flex-1 max-w-7xl w-full mx-auto p-6 md:p-8 space-y-8">
 
         {/* Input deck */}
         <section className="bg-[#0D182A]/80 border border-white/5 rounded-3xl p-6 md:p-10 backdrop-blur-xl shadow-2xl animate-fade-in-up">
@@ -408,7 +423,7 @@ export default function Home() {
             <div className="pb-8" />
           </section>
         )}
-      </main>
+      </div>
     </div>
   );
 }
