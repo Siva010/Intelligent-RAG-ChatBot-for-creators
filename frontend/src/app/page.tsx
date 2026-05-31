@@ -138,11 +138,11 @@ export default function Home() {
     }
   };
 
-  const handleSendMessage = async (e: React.FormEvent) => {
+  const handleSendMessage = async (e: React.FormEvent, overrideMessage?: string) => {
     e.preventDefault();
-    if (!chatInput.trim() || isChatLoading) return;
+    const userMessageContent = (overrideMessage ?? chatInput).trim();
+    if (!userMessageContent || isChatLoading) return;
 
-    const userMessageContent = chatInput.trim();
     setChatInput('');
     setIsChatLoading(true);
 

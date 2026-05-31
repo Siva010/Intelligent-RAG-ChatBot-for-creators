@@ -12,7 +12,7 @@ interface ChatConsoleProps {
   messages: ChatMessage[];
   input: string;
   setInput: (val: string) => void;
-  onSendMessage: (e: React.FormEvent) => void;
+  onSendMessage: (e: React.FormEvent, overrideMessage?: string) => void;
   isLoading: boolean;
   disabled: boolean;
   videoA?: VideoData | null;
@@ -266,13 +266,10 @@ export default function ChatConsole({
                 <button
                   key={i}
                   onClick={() => {
-                    // Set input and submit inside a single setTimeout so React
-                    // flushes the state update before requestSubmit() fires.
-                    setTimeout(() => {
-                      setInput(prompt);
-                      const form = document.getElementById('chat-form') as HTMLFormElement | null;
-                      if (form) form.requestSubmit();
-                    }, 50);
+                    // Call onSendMessage directly with the prompt text as an override,
+                    // bypassing the React state update cycle entirely — no race condition.
+                    const syntheticEvent = { preventDefault: () => {} } as React.FormEvent;
+                    onSendMessage(syntheticEvent, prompt);
                   }}
                   disabled={isLoading}
                   className="text-left flex-1 min-w-[250px] px-3 py-2.5 rounded-xl bg-zinc-900/60 border border-zinc-800 hover:border-sky-500/40 hover:bg-zinc-900 text-xs text-zinc-300 hover:text-white transition-all disabled:opacity-40 disabled:cursor-not-allowed"
