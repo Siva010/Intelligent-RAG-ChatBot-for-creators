@@ -172,7 +172,9 @@ class VectorStoreManager:
         for text in texts:
             seed = hash(text) % (2**32 - 1)
             rng = np.random.default_rng(seed)
-            embeddings.append(rng.random(768).tolist())  # 768-dim to match google embeddings
+            # Must match the real Google gemini-embedding-001 output dimension (3072).
+            # Using a different dimension here would silently fail Pinecone's validation.
+            embeddings.append(rng.random(3072).tolist())
         return embeddings
 
     def get_query_embedding(self, query: str) -> List[List[float]]:
