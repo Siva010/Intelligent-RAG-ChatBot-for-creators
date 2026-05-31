@@ -47,7 +47,13 @@ export default function Home() {
       const initResponse = await fetch(`${API_URL}/analyze`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url_a: urlA, url_b: urlB }),
+        body: JSON.stringify({
+          url_a: urlA,
+          url_b: urlB,
+          // Include authenticated user identity so each user gets an isolated
+          // LangGraph thread even when comparing the same pair of videos.
+          user_id: session?.user?.email ?? 'anonymous',
+        }),
       });
 
       if (!initResponse.ok) {

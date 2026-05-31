@@ -48,8 +48,10 @@ app.add_middleware(
 class AnalyzeRequest(BaseModel):
     url_a: str
     url_b: str
-    # session_id is derived server-side from the URL pair (MD5 hash) to ensure
-    # deterministic reuse and prevent client-supplied collisions.
+    # user_id is supplied by the frontend from the NextAuth session (email or 'anonymous').
+    # It is folded into the session hash so two different users analysing the same URL
+    # pair each get their own independent LangGraph checkpoint thread.
+    user_id: str = "anonymous"
 
 
 class ChatRequest(BaseModel):
@@ -76,8 +78,11 @@ async def analyze_videos(request: Request, req: AnalyzeRequest):
     if not url_a or not url_b:
         raise HTTPException(status_code=400, detail="Both video URLs are required.")
 
-    # Deterministic session ID based on the URL pair — shared for cache hits.
-    session_id = hashlib.md5(f"{url_a}|{url_b}".encode()).hexdigest()
+    # Deterministic session ID scoped to this user + URL pair.
+    # Including user_id prevents two users comparing the same videos from sharing
+    # the same LangGraph checkpoint thread (and each other's chat history).
+    user_id = req.user_id.strip() or "anonymous"
+    session_id = hashlib.md5(f"{user_id}|{url_a}|{url_b}".encode()).hexdigest()
 
     task_id = str(uuid.uuid4())
     # Fire off Celery background task
