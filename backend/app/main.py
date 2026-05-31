@@ -2,17 +2,18 @@ import asyncio
 import hashlib
 import json
 import logging
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from typing import Dict, Any
+from typing import Optional
 from sse_starlette.sse import EventSourceResponse
 
 from app.config import settings
 from app.services.ingestion import get_ingestor_for_url
 from app.services.cache import video_cache
 from app.services.vector_store import vector_store
-from app.services.agent import astream_session, stream_chat_message_sse
+from app.services.agent import astream_session, stream_chat_message_sse, init_checkpointer, close_checkpointer
 from app.worker import analyze_task
 import uuid
 import redis.asyncio as redis_async
@@ -23,10 +24,24 @@ from slowapi.errors import RateLimitExceeded
 
 logger = logging.getLogger(__name__)
 
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Manage shared resources across the process lifetime."""
+    # Open the shared SQLite checkpoint connection once at startup.
+    # All agent functions reuse this single connection instead of opening
+    # one per request, eliminating SQLite write-lock contention.
+    await init_checkpointer()
+    yield
+    # Gracefully close on shutdown so in-flight writes finish cleanly.
+    await close_checkpointer()
+
+
 app = FastAPI(
     title="CreatorJoy Replica API",
     description="Backend API for CreatorJoy's viral script doctor and comparison engine",
-    version="0.1.0"
+    version="0.1.0",
+    lifespan=lifespan,
 )
 
 # Configure rate limiter
