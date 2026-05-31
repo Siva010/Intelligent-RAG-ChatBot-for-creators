@@ -32,9 +32,11 @@ class TestRedisCache:
         assert cache.get("https://example.com/vid") == data
 
     def test_clear_empties_the_store(self, mock_redis):
+        mock_redis.scan_iter.return_value = ["video_cache:1", "video_cache:2"]
         cache = RedisCache("redis://dummy")
         cache.clear()
-        mock_redis.flushdb.assert_called_once()
+        mock_redis.scan_iter.assert_called_once_with("video_cache:*")
+        assert mock_redis.delete.call_count == 2
 
     def test_redis_connection_error_fallback(self):
         import redis

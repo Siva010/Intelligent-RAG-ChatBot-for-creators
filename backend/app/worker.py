@@ -1,15 +1,14 @@
-import asyncio
 import json
 import logging
 from typing import Dict, Any
-import redis.asyncio as redis_async
+import redis
 from celery import Celery
 
 from app.config import settings
 from app.services.ingestion import get_ingestor_for_url
 from app.services.cache import video_cache
 from app.services.vector_store import vector_store
-from app.services.agent import astream_session, init_checkpointer, close_checkpointer
+from app.services.agent import stream_session_sync, init_sync_checkpointer, close_sync_checkpointer
 
 logger = logging.getLogger(__name__)
 
@@ -24,67 +23,63 @@ celery_app = Celery(
     backend=celery_broker_url
 )
 
-async def _async_analyze_task(task_id: str, url_a: str, url_b: str, session_id: str):
-    # A connection pool scoped to this task's event loop.
-    # Cannot be module-level because each Celery task runs asyncio.run() which
-    # Creates a fresh event loop — module-level pools would be stale.
-    # Within a single task, pooling benefits the many _publish() calls.
-    pool = redis_async.ConnectionPool.from_url(settings.redis_url, decode_responses=True)
-    r = redis_async.Redis(connection_pool=pool)
+@celery_app.task(name="analyze_task")
+def analyze_task(task_id: str, url_a: str, url_b: str, session_id: str):
+    pool = redis.ConnectionPool.from_url(settings.redis_url, decode_responses=True)
+    r = redis.Redis(connection_pool=pool)
     channel = f"task_{task_id}"
+    events_key = f"task_events_{task_id}"
 
-    # Initialize the SQLite checkpointer for this worker task's event loop
-    await init_checkpointer()
+    init_sync_checkpointer()
 
-    async def _publish(msg_dict: dict):
-        await r.publish(channel, json.dumps(msg_dict))
+    def _publish(msg_dict: dict):
+        msg_str = json.dumps(msg_dict)
+        r.rpush(events_key, msg_str)
+        r.expire(events_key, 3600)
+        r.publish(channel, msg_str)
 
-    async def _ingest(url: str, label: str):
-        await _publish({"type": "progress", "message": f"Downloading {label}..."})
+    def _ingest(url: str, label: str):
+        _publish({"type": "progress", "message": f"Downloading {label}..."})
         cached = video_cache.get(url)
         if cached:
-            await _publish({"type": "progress", "message": f"{label} loaded from cache."})
+            _publish({"type": "progress", "message": f"{label} loaded from cache."})
             return cached
         try:
             ingestor = get_ingestor_for_url(url)
-            data = await asyncio.to_thread(ingestor.ingest, url)
+            data = ingestor.ingest(url)
             video_cache.set(url, data)
-            await _publish({"type": "progress", "message": f"{label} downloaded successfully."})
+            _publish({"type": "progress", "message": f"{label} downloaded successfully."})
             return data
         except Exception as e:
-            await _publish({"type": "error", "message": f"Failed to ingest {label}: {str(e)}"})
+            _publish({"type": "error", "message": f"Failed to ingest {label}: {str(e)}"})
             raise
 
-    async def _index(data: dict, label: str):
-        await _publish({"type": "progress", "message": f"Indexing {label} into vector store..."})
-        await asyncio.to_thread(vector_store.index_transcript, data["video_id"], data["transcript"])
-        await _publish({"type": "progress", "message": f"{label} indexed successfully."})
+    def _index(data: dict, label: str):
+        _publish({"type": "progress", "message": f"Indexing {label} into vector store..."})
+        vector_store.index_transcript(data["video_id"], data["transcript"])
+        _publish({"type": "progress", "message": f"{label} indexed successfully."})
 
     try:
-        data_a, data_b = await asyncio.gather(
-            _ingest(url_a, "Video A"),
-            _ingest(url_b, "Video B"),
-        )
+        data_a = _ingest(url_a, "Video A")
+        data_b = _ingest(url_b, "Video B")
 
         try:
-            await asyncio.gather(
-                _index(data_a, "Video A"),
-                _index(data_b, "Video B"),
-            )
+            _index(data_a, "Video A")
+            _index(data_b, "Video B")
         except Exception as e:
             logger.warning(f"Vector indexing error: {e}")
-            await _publish({"type": "progress", "message": f"Warning: Vector indexing error: {e}"})
+            _publish({"type": "progress", "message": f"Warning: Vector indexing error: {e}"})
 
-        await _publish({"type": "progress", "message": "Assembling RAG Context & Generating Hook Audit..."})
+        _publish({"type": "progress", "message": "Assembling RAG Context & Generating Hook Audit..."})
         
         session_meta: Dict[str, Any] = {}
-        async for evt_type, payload in astream_session(session_id, data_a, data_b):
+        for evt_type, payload in stream_session_sync(session_id, data_a, data_b):
             if evt_type == "hook_chunk":
-                await _publish({"type": "hook_chunk", "chunk": payload})
+                _publish({"type": "hook_chunk", "chunk": payload})
             elif evt_type == "done" and isinstance(payload, dict):
                 session_meta = payload
 
-        await _publish({"type": "complete", "data": {
+        _publish({"type": "complete", "data": {
             "video_a": {
                 "video_id": data_a["video_id"],
                 "platform": data_a["platform"],
@@ -123,13 +118,10 @@ async def _async_analyze_task(task_id: str, url_a: str, url_b: str, session_id: 
         }})
     except Exception as e:
         logger.error(f"Worker error: {e}")
-        await _publish({"type": "error", "message": f"Worker encountered an error: {str(e)}"})
+        _publish({"type": "error", "message": f"Worker encountered an error: {str(e)}"})
     finally:
-        await close_checkpointer() # close SQLite connection
-        await r.aclose()   # return connection to pool
-        await pool.aclose()  # drain and close the task-scoped pool
-
-@celery_app.task(name="analyze_task")
-def analyze_task(task_id: str, url_a: str, url_b: str, session_id: str):
-    asyncio.run(_async_analyze_task(task_id, url_a, url_b, session_id))
+        close_sync_checkpointer() # close SQLite connection
+        r.close()   # return connection to pool
+        pool.disconnect()  # drain and close the task-scoped pool
+    
     return {"status": "completed"}

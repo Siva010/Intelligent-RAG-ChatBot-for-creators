@@ -127,7 +127,24 @@ async def analyze_stream(task_id: str, request: Request):
         try:
             pubsub = r.pubsub()
             channel = f"task_{task_id}"
+            events_key = f"task_events_{task_id}"
             await pubsub.subscribe(channel)
+            
+            # Fetch historical events from Redis list for disconnected clients
+            historical_events = await r.lrange(events_key, 0, -1)  # type: ignore
+            for event_str in historical_events:
+                yield dict(data=event_str)
+                try:
+                    msg_dict = json.loads(event_str)
+                    if msg_dict.get("type") in ("complete", "error"):
+                        completed = True
+                except json.JSONDecodeError:
+                    pass
+
+            if completed:
+                await pubsub.unsubscribe(channel)
+                return
+
             try:
                 while True:
                     # Check if client disconnected

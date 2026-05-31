@@ -24,7 +24,7 @@ class RedisCache:
         if not self.is_connected or not self.client:
             return None
         try:
-            data_str = self.client.get(url)
+            data_str = self.client.get(f"video_cache:{url}")
             if isinstance(data_str, (str, bytes, bytearray)):
                 return json.loads(data_str)
             return None
@@ -37,7 +37,7 @@ class RedisCache:
             return
         try:
             data_str = json.dumps(data)
-            self.client.set(url, data_str, ex=self.ttl)
+            self.client.set(f"video_cache:{url}", data_str, ex=self.ttl)
         except Exception as e:
             logger.error(f"Redis set error for {url}: {e}")
 
@@ -45,7 +45,8 @@ class RedisCache:
         if not self.is_connected or not self.client:
             return
         try:
-            self.client.flushdb()
+            for key in self.client.scan_iter("video_cache:*"):
+                self.client.delete(key)
         except Exception as e:
             logger.error(f"Redis clear error: {e}")
 

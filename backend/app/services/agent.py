@@ -8,7 +8,9 @@ from langchain_core.runnables import RunnableConfig
 from langgraph.graph import StateGraph, START, END
 from langgraph.graph.message import add_messages
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
+from langgraph.checkpoint.sqlite import SqliteSaver
 import aiosqlite
+import sqlite3
 from app.config import settings
 from app.services.vector_store import vector_store
 
@@ -53,6 +55,36 @@ def get_checkpointer() -> AsyncSqliteSaver:
             "Ensure init_checkpointer() is called during app startup."
         )
     return _checkpointer
+
+
+# ---------------------------------------------------------------------------
+# Shared Synchronous SQLite checkpoint connection (for worker)
+# ---------------------------------------------------------------------------
+_sync_sqlite_conn: Optional[sqlite3.Connection] = None
+_sync_checkpointer: Optional[SqliteSaver] = None
+
+def init_sync_checkpointer() -> None:
+    """Open the sync SQLite connection. Call once per worker process."""
+    global _sync_sqlite_conn, _sync_checkpointer
+    _sync_sqlite_conn = sqlite3.connect("checkpoints.sqlite", check_same_thread=False)
+    _sync_sqlite_conn.execute("PRAGMA journal_mode=WAL;")
+    _sync_checkpointer = SqliteSaver(_sync_sqlite_conn)
+    _sync_checkpointer.setup()
+    logger.info("Sync SQLite checkpoint connection opened (WAL mode).")
+
+def close_sync_checkpointer() -> None:
+    """Close the sync SQLite connection."""
+    global _sync_sqlite_conn, _sync_checkpointer
+    if _sync_sqlite_conn:
+        _sync_sqlite_conn.close()
+        _sync_sqlite_conn = None
+        _sync_checkpointer = None
+        logger.info("Sync SQLite checkpoint connection closed.")
+
+def get_sync_checkpointer() -> SqliteSaver:
+    if _sync_checkpointer is None:
+        raise RuntimeError("Sync Checkpointer not initialised.")
+    return _sync_checkpointer
 
 
 # ---------------------------------------------------------------------------
@@ -538,6 +570,83 @@ async def astream_session(
                 })
 
     # If no tokens streamed (LLM unavailable → mock path), flush the mock text at once
+    if not emitted_any and hook_analysis:
+        yield ("hook_chunk", hook_analysis)
+
+    yield ("done", {
+        "hook_analysis": hook_analysis,
+        "is_mock_analysis": is_mock,
+        "chat_history": chat_history,
+    })
+
+
+def stream_session_sync(
+    session_id: str, video_a: Dict[str, Any], video_b: Dict[str, Any]
+):
+    """
+    Synchronous generator that streams the initial hook audit token-by-token.
+    Used by the Celery worker to avoid async nested loops.
+    """
+    memory = get_sync_checkpointer()
+    agent_graph = workflow.compile(checkpointer=memory)
+
+    config: RunnableConfig = {"configurable": {"thread_id": session_id}}
+
+    state_info = agent_graph.get_state(config)
+    if state_info and state_info.values and state_info.values.get("hook_analysis"):
+        logger.info(f"Session {session_id} already exists. Returning cached chat history.")
+        hook_analysis = state_info.values.get("hook_analysis", "")
+        is_mock = state_info.values.get("is_mock_analysis", False)
+        chat_history = []
+        for m in state_info.values.get("messages", []):
+            if m.type in ("human", "ai"):
+                chat_history.append({
+                    "role": "user" if m.type == "human" else "assistant",
+                    "content": extract_text(m.content),
+                })
+        yield ("done", {
+            "hook_analysis": hook_analysis,
+            "is_mock_analysis": is_mock,
+            "chat_history": chat_history,
+        })
+        return
+
+    initial_state = {
+        "messages": [HumanMessage(content="Start Comparative Analysis Audit")],
+        "video_a": video_a,
+        "video_b": video_b,
+        "hook_analysis": "",
+        "is_mock_analysis": False,
+        "session_id": session_id,
+    }
+
+    header = "### Initial Hook Audit & Diagnostics\n\n"
+    yield ("hook_chunk", header)
+
+    emitted_any = False
+    for event in agent_graph.stream_events(initial_state, config=config, version="v2"):
+        kind = event["event"]
+        if kind == "on_chat_model_stream":
+            token = event["data"]["chunk"].content
+            if token and isinstance(token, str):
+                emitted_any = True
+                yield ("hook_chunk", token)
+
+    final = agent_graph.get_state(config)
+    hook_analysis = ""
+    is_mock = False
+    chat_history: List[Dict[str, str]] = []
+
+    if final and final.values:
+        hook_analysis = final.values.get("hook_analysis", "")
+        is_mock = final.values.get("is_mock_analysis", False)
+        for m in final.values.get("messages", []):
+            if m.type in ("human", "ai"):
+                chat_history.append({
+                    "role": "user" if m.type == "human" else "assistant",
+                    "content": extract_text(m.content),
+                })
+
     if not emitted_any and hook_analysis:
         yield ("hook_chunk", hook_analysis)
 

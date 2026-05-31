@@ -258,14 +258,10 @@ class TestAstreamSession:
         """Each test gets a fresh MemorySaver so sessions don't bleed."""
         from langgraph.checkpoint.memory import MemorySaver
         from app.services import agent as agent_module
-        old_memory = agent_module.memory
-        agent_module.memory = MemorySaver()
-        # Recompile the graph with the fresh checkpointer
-        agent_module.agent_graph = agent_module.workflow.compile(
-            checkpointer=agent_module.memory
-        )
+        old_memory = agent_module._checkpointer
+        agent_module._checkpointer = MemorySaver()  # type: ignore
         yield
-        agent_module.memory = old_memory
+        agent_module._checkpointer = old_memory
 
     @pytest.mark.asyncio
     async def test_streams_header_chunk_first(self):
@@ -348,9 +344,9 @@ class TestStreamChatMessageSse:
         from app.services import agent as agent_module
         from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
 
-        agent_module.memory = MemorySaver()
-        agent_module.agent_graph = agent_module.workflow.compile(
-            checkpointer=agent_module.memory
+        agent_module._checkpointer = MemorySaver()  # type: ignore
+        agent_graph = agent_module.workflow.compile(
+            checkpointer=agent_module._checkpointer
         )
 
         # Pre-seed the graph state so chat won't 404
@@ -368,7 +364,7 @@ class TestStreamChatMessageSse:
             "session_id": "chat_session",
         }
         # Directly update state (no LLM call needed)
-        agent_module.agent_graph.update_state(config, initial_state)
+        agent_graph.update_state(config, initial_state)
         yield
 
     @pytest.mark.asyncio

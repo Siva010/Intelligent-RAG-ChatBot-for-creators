@@ -61,7 +61,8 @@ VIDEO_B_PAYLOAD = {
 
 @pytest.fixture
 def client():
-    return TestClient(app, raise_server_exceptions=True)
+    with TestClient(app, raise_server_exceptions=True) as c:
+        yield c
 
 
 # ---------------------------------------------------------------------------
@@ -143,22 +144,49 @@ async def _fake_astream_session(session_id, data_a, data_b):
 class TestAnalyzeSSEFlow:
     def _run_sse(self, client, url_a, url_b):
         """Helper: POST /analyze and collect all SSE messages into a list."""
-        with patch("app.main.get_ingestor_for_url") as mock_ingestor_factory, \
-             patch("app.main.vector_store") as mock_vs, \
-             patch("app.main.astream_session", side_effect=_fake_astream_session):
+        with patch("app.main.analyze_task.apply_async") as mock_celery, \
+             patch("app.main.redis_async.Redis") as mock_redis_class:
 
-            mock_ingestor = MagicMock()
-            mock_ingestor.ingest.side_effect = [
-                dict(VIDEO_A_PAYLOAD),
-                dict(VIDEO_B_PAYLOAD),
+            # Setup dummy redis mock with correct sync/async method signatures
+            mock_redis = MagicMock()
+            mock_redis_class.return_value = mock_redis
+            
+            mock_messages = [
+                json.dumps({"type": "progress", "message": "Downloading..."}),
+                json.dumps({"type": "hook_chunk", "chunk": "### Hook Audit\n\n"}),
+                json.dumps(_make_sse_complete_event())
             ]
-            mock_ingestor_factory.return_value = mock_ingestor
-            mock_vs.index_transcript.return_value = None
+            async def mock_lrange(*args, **kwargs):
+                return mock_messages
+            mock_redis.lrange = mock_lrange
+            
+            async def mock_aclose(*args, **kwargs):
+                pass
+            mock_redis.aclose = mock_aclose
+            
+            mock_pubsub = MagicMock()
+            async def mock_subscribe(*args, **kwargs):
+                pass
+            mock_pubsub.subscribe = mock_subscribe
+            
+            async def mock_unsubscribe(*args, **kwargs):
+                pass
+            mock_pubsub.unsubscribe = mock_unsubscribe
+            
+            async def mock_get_message(*args, **kwargs):
+                return None
+            mock_pubsub.get_message = mock_get_message
+            
+            mock_redis.pubsub.return_value = mock_pubsub
 
-            with client.stream("POST", "/analyze", json={
+            resp = client.post("/analyze", json={
                 "url_a": url_a,
                 "url_b": url_b,
-            }) as response:
+            })
+            assert resp.status_code == 200
+            task_id = resp.json()["task_id"]
+
+            with client.stream("GET", f"/analyze/stream/{task_id}") as response:
                 assert response.status_code == 200
                 messages = []
                 for line in response.iter_lines():
