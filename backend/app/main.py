@@ -88,24 +88,26 @@ async def analyze_videos(request: Request, req: AnalyzeRequest):
 async def analyze_stream(task_id: str):
     async def _redis_stream_generator():
         r = redis_async.Redis.from_url(settings.redis_url, decode_responses=True)
-        pubsub = r.pubsub()
-        channel = f"task_{task_id}"
-        await pubsub.subscribe(channel)
         try:
-            while True:
-                message = await pubsub.get_message(ignore_subscribe_messages=True, timeout=1.0)
-                if message and message["type"] == "message":
-                    data = message["data"]
-                    yield dict(data=data)
-                    try:
-                        msg_dict = json.loads(str(data))
-                        if msg_dict.get("type") in ("complete", "error"):
-                            break
-                    except json.JSONDecodeError:
-                        pass
-                await asyncio.sleep(0.1)
+            pubsub = r.pubsub()
+            channel = f"task_{task_id}"
+            await pubsub.subscribe(channel)
+            try:
+                while True:
+                    message = await pubsub.get_message(ignore_subscribe_messages=True, timeout=1.0)
+                    if message and message["type"] == "message":
+                        data = message["data"]
+                        yield dict(data=data)
+                        try:
+                            msg_dict = json.loads(str(data))
+                            if msg_dict.get("type") in ("complete", "error"):
+                                break
+                        except json.JSONDecodeError:
+                            pass
+                    await asyncio.sleep(0.1)
+            finally:
+                await pubsub.unsubscribe(channel)
         finally:
-            await pubsub.unsubscribe(channel)
             await r.aclose()
             
     return EventSourceResponse(_redis_stream_generator())
