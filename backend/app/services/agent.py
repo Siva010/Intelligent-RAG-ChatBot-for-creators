@@ -537,7 +537,7 @@ async def stream_chat_message_sse(session_id: str, message: str):
         config: RunnableConfig = {"configurable": {"thread_id": session_id}}
     
         state_info = await agent_graph.aget_state(config)
-        if not state_info or not state_info.values:
+        if state_info is None or state_info.values is None or not state_info.values.get("hook_analysis"):
             yield dict(data=json.dumps({"chunk": "**Error:** Session not found. Call /analyze first. "}))
             yield dict(data="[DONE]")
             return
