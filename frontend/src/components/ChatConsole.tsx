@@ -239,8 +239,8 @@ export default function ChatConsole({
                 <button
                   key={i}
                   onClick={() => {
-                    setInput(prompt);
-                    // slight delay so state update can flush before submit
+                    // Set input and submit inside a single setTimeout so React
+                    // flushes the state update before requestSubmit() fires.
                     setTimeout(() => {
                       setInput(prompt);
                       const form = document.getElementById('chat-form') as HTMLFormElement | null;
