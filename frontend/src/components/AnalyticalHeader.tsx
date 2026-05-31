@@ -100,6 +100,9 @@ export default function AnalyticalHeader({ videoA, videoB }: AnalyticalHeaderPro
               src={data.thumbnail_url}
               alt={data.title}
               className="w-full h-full object-cover"
+              onError={(e) => {
+                e.currentTarget.style.display = 'none';
+              }}
             />
           ) : (
             <div className="w-full h-full flex items-center justify-center">
