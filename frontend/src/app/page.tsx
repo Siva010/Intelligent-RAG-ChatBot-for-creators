@@ -64,8 +64,18 @@ export default function Home() {
       const { task_id, session_id } = await initResponse.json();
       if (session_id) setSessionId(session_id);
 
-      // Step 2: Stream updates via Redis PubSub from the Celery worker
-      const streamResponse = await fetch(`${API_URL}/analyze/stream/${task_id}`);
+      // Step 2: Stream updates via Redis PubSub from the Celery worker.
+      // AbortController gives us a 3-minute hard timeout — if the worker crashes
+      // or Redis stalls, the spinner won't hang forever.
+      const streamController = new AbortController();
+      const streamTimeout = setTimeout(() => {
+        streamController.abort();
+      }, 3 * 60 * 1000); // 3 minutes
+
+      try {
+      const streamResponse = await fetch(`${API_URL}/analyze/stream/${task_id}`, {
+        signal: streamController.signal,
+      });
 
       if (!streamResponse.ok) {
         throw new Error('Failed to connect to task stream.');
@@ -128,6 +138,15 @@ export default function Home() {
           }
         }
         if (workerError) throw new Error(workerError);
+      }
+      } catch (streamErr: unknown) {
+        // Surface AbortController timeout as a readable message
+        if (streamErr instanceof Error && streamErr.name === 'AbortError') {
+          throw new Error('Analysis timed out after 3 minutes. Check that the Celery worker is running.');
+        }
+        throw streamErr;
+      } finally {
+        clearTimeout(streamTimeout);
       }
     } catch (err: unknown) {
       console.error('Ingestion failed:', err);
