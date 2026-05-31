@@ -20,12 +20,12 @@ class RedisCache:
                 self.client = redis.Redis.from_url(self.redis_url, decode_responses=True)
                 # Test connection
                 self.client.ping()
-            self.is_connected = True
-            logger.info(f"Connected to Redis cache at {redis_url}")
-        except redis.ConnectionError as e:
-            logger.warning(f"Failed to connect to Redis at {redis_url}: {e}. Falling back to a dummy cache.")
-            self.is_connected = False
-            self.client = None
+                self.is_connected = True
+                logger.info(f"Connected to Redis cache at {self.redis_url}")
+            except redis.ConnectionError as e:
+                logger.warning(f"Failed to connect to Redis at {self.redis_url}: {e}. Falling back to a dummy cache.")
+                self.is_connected = False
+                self.client = None
 
     def get(self, url: str) -> Optional[Dict[str, Any]]:
         self._ensure_connected()

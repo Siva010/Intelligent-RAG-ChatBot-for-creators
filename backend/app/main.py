@@ -90,8 +90,8 @@ async def health_check(request: Request):
     try:
         from app.worker import celery_app
         from celery.app.control import Inspect
-        i = Inspect(app=celery_app)
-        celery_active = i.ping(timeout=1.0) is not None
+        i = Inspect(app=celery_app, timeout=1.0)
+        celery_active = i.ping() is not None
     except Exception as e:
         celery_active = False
 
