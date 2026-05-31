@@ -1,4 +1,4 @@
-import React, { useRef, useEffect, useState } from 'react';
+import React, { useRef, useEffect, useState, useCallback } from 'react';
 import { Send, Bot, User, Loader2, PlayCircle, Zap } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import { VideoData } from './AnalyticalHeader';
@@ -7,6 +7,55 @@ export interface ChatMessage {
   role: 'user' | 'assistant';
   content: string;
 }
+
+// ---------------------------------------------------------------------------
+// MarkdownRenderer — defined OUTSIDE ChatConsole so React sees a stable
+// component type across re-renders. Inline definition caused unmount/remount
+// on every streamed token, producing visible flicker during streaming.
+// ---------------------------------------------------------------------------
+interface MarkdownRendererProps {
+  content: string;
+  processNode: (node: React.ReactNode, keyPrefix: string) => React.ReactNode;
+}
+
+const MarkdownRenderer = React.memo(function MarkdownRenderer(
+  { content, processNode }: MarkdownRendererProps
+) {
+  return (
+    <ReactMarkdown
+      components={{
+        p: ({ children }) => (
+          <p className="mb-4 last:mb-0 leading-relaxed text-zinc-300 text-sm whitespace-pre-wrap">
+            {processNode(children, 'p')}
+          </p>
+        ),
+        strong: ({ children }) => (
+          <strong className="font-bold text-zinc-100">{children}</strong>
+        ),
+        li: ({ children }) => (
+          <li className="leading-relaxed text-zinc-300 text-sm">
+            {processNode(children, 'li')}
+          </li>
+        ),
+        h1: ({ children }) => <h1 className="text-xl font-bold text-white mt-4 mb-2 first:mt-0">{children}</h1>,
+        h2: ({ children }) => <h2 className="text-lg font-bold text-white mt-3 mb-2">{children}</h2>,
+        h3: ({ children }) => <h3 className="text-md font-bold text-white mt-2 mb-1">{children}</h3>,
+        code: ({ children }) => (
+          <code className="bg-zinc-950 px-1.5 py-0.5 rounded text-[10px] tracking-wider text-sky-400 font-mono border border-zinc-800">
+            {children}
+          </code>
+        ),
+        pre: ({ children }) => (
+          <pre className="bg-zinc-950 p-4 rounded-xl text-xs text-zinc-300 font-mono border border-zinc-850 overflow-x-auto my-3">
+            {children}
+          </pre>
+        )
+      }}
+    >
+      {content}
+    </ReactMarkdown>
+  );
+});
 
 interface ChatConsoleProps {
   messages: ChatMessage[];
@@ -88,8 +137,9 @@ export default function ChatConsole({
   };
 
   // Recursively process React node tree, replacing citation text with styled badges.
-  // This handles citations that appear inside bold, italic, code, or other inline elements.
-  const processCitationsInNode = (node: React.ReactNode, keyPrefix: string): React.ReactNode => {
+  // Wrapped in useCallback so its reference only changes when videoA/videoB change,
+  // keeping MarkdownRenderer (React.memo) from re-rendering on unrelated state updates.
+  const processCitationsInNode = useCallback((node: React.ReactNode, keyPrefix: string): React.ReactNode => {
     if (typeof node === 'string') {
       return parseCitations(node, keyPrefix);
     }
@@ -108,7 +158,7 @@ export default function ChatConsole({
       return React.cloneElement(el, { key: el.key || keyPrefix } as React.Attributes, newChildren);
     }
     return node;
-  };
+  }, [videoA, videoB]); // re-memoize only when video data changes
 
   // Custom parser to format citations like [Video A @ 01:24] or [Video B @ 00:15] into premium badges.
   // Returns an array of strings and JSX elements (badges).
@@ -157,45 +207,7 @@ export default function ChatConsole({
     return parts.length === 1 ? parts[0] : parts;
   };
 
-  // Helper component to render markdown with support for inline citations in all contexts
-  const MarkdownRenderer = ({ content }: { content: string }) => {
-    return (
-      <ReactMarkdown
-        components={{
-          p: ({ children }) => (
-            <p className="mb-4 last:mb-0 leading-relaxed text-zinc-300 text-sm whitespace-pre-wrap">
-              {processCitationsInNode(children, 'p')}
-            </p>
-          ),
-          strong: ({ children }) => (
-            <strong className="font-bold text-zinc-100">{children}</strong>
-          ),
-          li: ({ children }) => (
-            <li className="leading-relaxed text-zinc-300 text-sm">
-              {processCitationsInNode(children, 'li')}
-            </li>
-          ),
-          h1: ({ children }) => <h1 className="text-xl font-bold text-white mt-4 mb-2 first:mt-0">{children}</h1>,
-          h2: ({ children }) => <h2 className="text-lg font-bold text-white mt-3 mb-2">{children}</h2>,
-          h3: ({ children }) => <h3 className="text-md font-bold text-white mt-2 mb-1">{children}</h3>,
-          code: ({ children }) => (
-            <code className="bg-zinc-950 px-1.5 py-0.5 rounded text-[10px] tracking-wider text-sky-400 font-mono border border-zinc-800">
-              {children}
-            </code>
-          ),
-          pre: ({ children }) => (
-            <pre className="bg-zinc-950 p-4 rounded-xl text-xs text-zinc-300 font-mono border border-zinc-850 overflow-x-auto my-3">
-              {children}
-            </pre>
-          )
-        }}
-      >
-        {content}
-      </ReactMarkdown>
-    );
-  };
-
-
+  // MarkdownRenderer is defined outside this component — see top of file.
   return (
     <div className="flex flex-col h-[70vh] md:h-[600px] border border-zinc-800 rounded-2xl bg-zinc-900/40 backdrop-blur-md overflow-hidden shadow-2xl animate-fade-in-up delay-200">
       {/* Console Header */}
@@ -248,7 +260,7 @@ export default function ChatConsole({
                     : 'bg-zinc-900/40 border-zinc-800 text-zinc-300 rounded-tl-none'
                     }`}
                 >
-                  <MarkdownRenderer content={msg.content} />
+                  <MarkdownRenderer content={msg.content} processNode={processCitationsInNode} />
                 </div>
               </div>
             ))
