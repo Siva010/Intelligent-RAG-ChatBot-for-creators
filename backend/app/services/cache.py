@@ -25,7 +25,7 @@ class RedisCache:
             return None
         try:
             data_str = self.client.get(url)
-            if data_str:
+            if isinstance(data_str, (str, bytes, bytearray)):
                 return json.loads(data_str)
             return None
         except Exception as e:
