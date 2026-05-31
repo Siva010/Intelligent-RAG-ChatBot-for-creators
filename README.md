@@ -1,6 +1,6 @@
 # Viral Script Doctor & RAG Intelligence Engine
 
-Welcome to the Viral Script Doctor—a production-grade, highly-tuned Retrieval-Augmented Generation (RAG) application. It is designed to act as your ultimate social media strategist. By comparing video transcripts, analyzing performance metrics, and pinpointing the exact psychology behind a viral hook, it helps creators understand why a video succeeds. With memory-aware conversations and grounded, clickable citations, it feels less like a tool and more like having an elite scriptwriter right by your side.
+Welcome to the Viral Script Doctor - a production-grade, highly-tuned Retrieval-Augmented Generation (RAG) application. It is designed to act as your social media strategist for creatos. By comparing video transcripts, analyzing performance metrics, and pinpointing the exact psychology behind a viral hook, it helps creators understand why a video succeeds. With memory-aware conversations and grounded, clickable citations.
 
 ---
 
