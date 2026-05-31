@@ -25,7 +25,12 @@ celery_app = Celery(
 )
 
 async def _async_analyze_task(task_id: str, url_a: str, url_b: str, session_id: str):
-    r = redis_async.Redis.from_url(settings.redis_url, decode_responses=True)
+    # A connection pool scoped to this task's event loop.
+    # Cannot be module-level because each Celery task runs asyncio.run() which
+    # creates a fresh event loop — module-level pools would be stale.
+    # Within a single task, pooling benefits the many _publish() calls.
+    pool = redis_async.ConnectionPool.from_url(settings.redis_url, decode_responses=True)
+    r = redis_async.Redis(connection_pool=pool)
     channel = f"task_{task_id}"
 
     async def _publish(msg_dict: dict):
@@ -117,7 +122,8 @@ async def _async_analyze_task(task_id: str, url_a: str, url_b: str, session_id: 
         logger.error(f"Worker error: {e}")
         await _publish({"type": "error", "message": f"Worker encountered an error: {str(e)}"})
     finally:
-        await r.aclose()
+        await r.aclose()   # return connection to pool
+        await pool.aclose()  # drain and close the task-scoped pool
 
 @celery_app.task(name="analyze_task")
 def analyze_task(task_id: str, url_a: str, url_b: str, session_id: str):

@@ -3,10 +3,10 @@ import hashlib
 import json
 import logging
 from contextlib import asynccontextmanager
+from typing import Optional
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from typing import Optional
 from sse_starlette.sse import EventSourceResponse
 
 from app.config import settings
@@ -24,17 +24,27 @@ from slowapi.errors import RateLimitExceeded
 
 logger = logging.getLogger(__name__)
 
+# Module-level Redis connection pool — shared across all SSE stream requests.
+# Created once at startup, torn down at shutdown.
+_redis_pool: Optional[redis_async.ConnectionPool] = None
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Manage shared resources across the process lifetime."""
+    global _redis_pool
     # Open the shared SQLite checkpoint connection once at startup.
-    # All agent functions reuse this single connection instead of opening
-    # one per request, eliminating SQLite write-lock contention.
     await init_checkpointer()
+    # Create the Redis connection pool. Borrowing from a pool avoids creating
+    # a new TCP connection for every SSE stream request.
+    _redis_pool = redis_async.ConnectionPool.from_url(
+        settings.redis_url, decode_responses=True, max_connections=20
+    )
     yield
-    # Gracefully close on shutdown so in-flight writes finish cleanly.
+    # Graceful shutdown: close SQLite then drain the Redis pool.
     await close_checkpointer()
+    await _redis_pool.aclose()
+    logger.info("Redis connection pool closed.")
 
 
 app = FastAPI(
@@ -107,7 +117,8 @@ async def analyze_videos(request: Request, req: AnalyzeRequest):
 @app.get("/analyze/stream/{task_id}")
 async def analyze_stream(task_id: str):
     async def _redis_stream_generator():
-        r = redis_async.Redis.from_url(settings.redis_url, decode_responses=True)
+        # Borrow a connection from the shared pool — no new TCP handshake per request.
+        r = redis_async.Redis(connection_pool=_redis_pool)
         try:
             pubsub = r.pubsub()
             channel = f"task_{task_id}"
@@ -128,8 +139,9 @@ async def analyze_stream(task_id: str):
             finally:
                 await pubsub.unsubscribe(channel)
         finally:
+            # Release connection back to the pool (does not close the underlying socket).
             await r.aclose()
-            
+
     return EventSourceResponse(_redis_stream_generator())
 
 
