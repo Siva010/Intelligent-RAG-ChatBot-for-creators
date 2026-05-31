@@ -276,7 +276,8 @@ class TestAstreamSession:
                 events.append((evt_type, payload))
 
         assert events[0][0] == "hook_chunk"
-        assert "Hook Audit" in events[0][1]
+        assert "Building analysis context" in events[0][1]
+        assert "Hook Audit" in events[1][1]
 
     @pytest.mark.asyncio
     async def test_always_emits_done_event(self):

@@ -541,6 +541,9 @@ async def astream_session(
     }
 
     # Yield the section header immediately so the chat feels responsive
+    progress_msg = "> *Building analysis context & generating hook audit...*\n\n"
+    yield ("hook_chunk", progress_msg)
+    
     header = "### Initial Hook Audit & Diagnostics\n\n"
     yield ("hook_chunk", header)
 
@@ -619,6 +622,9 @@ def stream_session_sync(
         "is_mock_analysis": False,
         "session_id": session_id,
     }
+
+    progress_msg = "> *Building analysis context & generating hook audit...*\n\n"
+    yield ("hook_chunk", progress_msg)
 
     header = "### Initial Hook Audit & Diagnostics\n\n"
     yield ("hook_chunk", header)

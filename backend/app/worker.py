@@ -2,6 +2,7 @@ import json
 import logging
 from typing import Dict, Any
 import redis
+from concurrent.futures import ThreadPoolExecutor
 from celery import Celery
 
 from app.config import settings
@@ -60,12 +61,15 @@ def analyze_task(task_id: str, url_a: str, url_b: str, session_id: str):
         _publish({"type": "progress", "message": f"{label} indexed successfully."})
 
     try:
-        data_a = _ingest(url_a, "Video A")
-        data_b = _ingest(url_b, "Video B")
+        with ThreadPoolExecutor(max_workers=2) as ex:
+            fut_a = ex.submit(_ingest, url_a, "Video A")
+            fut_b = ex.submit(_ingest, url_b, "Video B")
+            data_a, data_b = fut_a.result(), fut_b.result()
 
         try:
-            _index(data_a, "Video A")
-            _index(data_b, "Video B")
+            with ThreadPoolExecutor(max_workers=2) as ex:
+                ex.submit(_index, data_a, "Video A")
+                ex.submit(_index, data_b, "Video B")
         except Exception as e:
             logger.warning(f"Vector indexing error: {e}")
             _publish({"type": "progress", "message": f"Warning: Vector indexing error: {e}"})

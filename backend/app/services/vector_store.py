@@ -79,6 +79,7 @@ class VectorStoreManager:
     def __init__(self):
         self.pinecone_client: Any = None
         self.index: Any = None
+        self.chroma_collection: Any = None
         self.simple_store: Optional[SimpleVectorStore] = None
         
         # We don't wipe pinecone automatically as it's a shared stateful resource
@@ -89,10 +90,17 @@ class VectorStoreManager:
                 self.index = self.pinecone_client.Index(settings.pinecone_index_name)
                 logger.info(f"Pinecone initialised targeting index: {settings.pinecone_index_name}")
             except Exception as e:
-                logger.error(f"Failed to initialise Pinecone: {e}. Falling back to SimpleVectorStore.")
+                logger.error(f"Failed to initialise Pinecone: {e}. Falling back to ChromaDB.")
+        
+        if not self.pinecone_client:
+            try:
+                import chromadb
+                client = chromadb.PersistentClient(path="./chroma_db")
+                self.chroma_collection = client.get_or_create_collection(name="creatorjoy")
+                logger.info("ChromaDB initialised as local vector store fallback")
+            except ImportError:
+                logger.warning("chromadb not installed. Falling back to SimpleVectorStore.")
                 self.simple_store = SimpleVectorStore()
-        else:
-            self.simple_store = SimpleVectorStore()
 
     # ------------------------------------------------------------------
     # Embeddings
@@ -344,38 +352,46 @@ class VectorStoreManager:
             try:
                 embeddings = self.get_embeddings(texts)
                 
-                # Dimension validation
-                if embeddings:
-                    expected_dim = None
-                    try:
-                        stats = self.index.describe_index_stats()
-                        expected_dim = stats.get("dimension")
-                    except Exception as stats_e:
-                        logger.warning(f"Could not fetch Pinecone index stats: {stats_e}")
+                if self.pinecone_client:
+                    # Dimension validation
+                    if embeddings:
+                        expected_dim = None
+                        try:
+                            stats = self.index.describe_index_stats()
+                            expected_dim = stats.get("dimension")
+                        except Exception as stats_e:
+                            logger.warning(f"Could not fetch Pinecone index stats: {stats_e}")
+                            
+                        actual_dim = len(embeddings[0])
+                        if expected_dim and actual_dim != expected_dim:
+                            err_msg = f"Embedding dimension mismatch: Pinecone index expects {expected_dim}-dim, but embeddings are {actual_dim}-dim."
+                            logger.error(err_msg)
+                            raise ValueError(err_msg)
+    
+                    # For Pinecone, we must store the text inside the metadata
+                    vectors_to_upsert = []
+                    for i in range(len(chunks)):
+                        # Merge the text into metadata for Pinecone retrieval
+                        meta = metadatas[i].copy()
+                        meta["text"] = texts[i]
                         
-                    actual_dim = len(embeddings[0])
-                    if expected_dim and actual_dim != expected_dim:
-                        err_msg = f"Embedding dimension mismatch: Pinecone index expects {expected_dim}-dim, but embeddings are {actual_dim}-dim."
-                        logger.error(err_msg)
-                        raise ValueError(err_msg)
-
-                # For Pinecone, we must store the text inside the metadata
-                vectors_to_upsert = []
-                for i in range(len(chunks)):
-                    # Merge the text into metadata for Pinecone retrieval
-                    meta = metadatas[i].copy()
-                    meta["text"] = texts[i]
+                        vectors_to_upsert.append({
+                            "id": ids[i],
+                            "values": embeddings[i],
+                            "metadata": meta
+                        })
                     
-                    vectors_to_upsert.append({
-                        "id": ids[i],
-                        "values": embeddings[i],
-                        "metadata": meta
-                    })
-                
-                # Upsert to Pinecone
-                self.index.upsert(vectors=vectors_to_upsert)
+                    # Upsert to Pinecone
+                    self.index.upsert(vectors=vectors_to_upsert)
+                elif self.chroma_collection is not None:
+                    self.chroma_collection.upsert(
+                        documents=texts,
+                        embeddings=embeddings,
+                        metadatas=metadatas,
+                        ids=ids
+                    )
             except Exception as e:
-                logger.error(f"Pinecone upsert failed: {e}. Falling back to simple store.")
+                logger.error(f"Vector db upsert failed: {e}. Falling back to simple store.")
                 if not self.simple_store:
                     self.simple_store = SimpleVectorStore()
                 self.simple_store.add_documents(texts, metadatas, ids)
@@ -414,27 +430,47 @@ class VectorStoreManager:
             try:
                 query_embeddings = self.get_query_embedding(query)
                 
-                # Pinecone query
-                response = self.index.query(
-                    vector=query_embeddings[0],
-                    top_k=n_results * 2,  # Fetch extra to be safe
-                    filter={"video_id": {"$in": video_ids}},
-                    include_metadata=True
-                )
-                
-                for match in response.matches:
-                    meta = match.metadata
-                    if meta:
-                        results.append({
-                            "text": meta.get("text", ""),
-                            "video_id": meta.get("video_id"),
-                            "start_time": meta.get("start_time"),
-                        })
-                        if len(results) >= n_results:
-                            break
-
+                if self.pinecone_client:
+                    # Pinecone query
+                    response = self.index.query(
+                        vector=query_embeddings[0],
+                        top_k=n_results * 2,  # Fetch extra to be safe
+                        filter={"video_id": {"$in": video_ids}},
+                        include_metadata=True
+                    )
+                    
+                    for match in response.matches:
+                        meta = match.metadata
+                        if meta:
+                            results.append({
+                                "text": meta.get("text", ""),
+                                "video_id": meta.get("video_id"),
+                                "start_time": meta.get("start_time"),
+                            })
+                            if len(results) >= n_results:
+                                break
+                elif self.chroma_collection is not None:
+                    # ChromaDB query
+                    response = self.chroma_collection.query(
+                        query_embeddings=query_embeddings,
+                        n_results=n_results * 2,
+                        where={"video_id": {"$in": video_ids}}
+                    )
+                    
+                    if response and "metadatas" in response and response["metadatas"]:
+                        metas = response["metadatas"][0]
+                        docs = response["documents"][0] if "documents" in response and response["documents"] else []
+                        for meta, doc in zip(metas, docs):
+                            if meta and meta.get("video_id") in video_ids:
+                                results.append({
+                                    "text": doc,
+                                    "video_id": meta.get("video_id"),
+                                    "start_time": meta.get("start_time"),
+                                })
+                                if len(results) >= n_results:
+                                    break
             except Exception as e:
-                logger.error(f"Pinecone query failed: {e}.")
+                logger.error(f"Vector store query failed: {e}.")
                 if self.simple_store:
                     raw_results = self.simple_store.query(query, n_results=n_results * 3, video_ids=video_ids)
                     if raw_results and "documents" in raw_results and raw_results["documents"]:
