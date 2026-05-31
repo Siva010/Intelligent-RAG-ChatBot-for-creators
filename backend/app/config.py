@@ -12,6 +12,7 @@ class Settings(BaseSettings):
     redis_url: str = os.getenv("REDIS_URL", "redis://localhost:6379/0")
     pinecone_api_key: str = os.getenv("PINECONE_API_KEY", "")
     pinecone_index_name: str = os.getenv("PINECONE_INDEX_NAME", "creatorjoy")
+    apify_api_token: str = os.getenv("APIFY_API_TOKEN", "")
     cache_expiry_seconds: int = 3600
     host: str = "127.0.0.1"
     port: int = 8000

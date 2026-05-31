@@ -575,5 +575,161 @@ class RealMediaIngestor(BaseIngestor):
         }
 
 
+class ApifyIngestor(BaseIngestor):
+    """
+    Fallback ingestor that uses Apify API to fetch metadata if yt-dlp is blocked.
+    Requires apify-client and APIFY_API_TOKEN.
+    """
+    def ingest(self, url: str) -> Dict[str, Any]:
+        if not settings.apify_api_token:
+            raise ValueError("Apify API token is not configured.")
+        
+        try:
+            from apify_client import ApifyClient
+        except ImportError:
+            raise RuntimeError("apify-client is not installed.")
+
+        client = ApifyClient(settings.apify_api_token)
+        is_youtube = "youtube" in url.lower() or "youtu.be" in url.lower()
+        
+        if is_youtube:
+            run_input = {"startUrls": [{"url": url}], "maxResults": 1}
+            actor_id = "microworlds/youtube-scraper"
+        else:
+            run_input = {"directUrls": [url]}
+            actor_id = "apify/instagram-scraper"
+
+        logger.info(f"Calling Apify Actor {actor_id} for {url}...")
+        try:
+            run = client.actor(actor_id).call(run_input=run_input)
+            if not run:
+                raise RuntimeError("Apify Actor call returned None.")
+            
+            # apify_client returns a dict, but type checkers sometimes see a custom class
+            if isinstance(run, dict):
+                dataset_id = run.get("defaultDatasetId", "")
+            else:
+                dataset_id = getattr(run, "defaultDatasetId", "")
+                
+            dataset = client.dataset(dataset_id).list_items().items
+        except Exception as e:
+            raise RuntimeError(f"Apify Actor call failed: {e}")
+
+        if not dataset:
+            raise RuntimeError(f"Apify Actor {actor_id} returned no data for {url}")
+            
+        item = dataset[0]
+        
+        if is_youtube:
+            video_id = item.get("id", "unknown")
+            title = str(item.get("title") or "Unknown Video")
+            description = str(item.get("description") or title)
+            creator = item.get("channelName", "Unknown Creator")
+            follower_count = int(item.get("channelNumberOfSubscribers") or 0)
+            upload_date = str(item.get("date") or "Unknown")[:10]
+            thumbnail_url = item.get("thumbnailUrl", "")
+            views = int(item.get("viewCount") or 0)
+            likes = int(item.get("likeCount") or 0)
+            comments = int(item.get("commentCount") or 0)
+            duration = int(item.get("duration") or 0)
+            hashtags = []
+        else:
+            video_id = item.get("id", "unknown")
+            title = str(item.get("caption") or "Unknown Video")
+            description = title
+            creator = item.get("ownerUsername", "Unknown Creator")
+            follower_count = int(item.get("ownerFollowersCount") or 0)
+            upload_date = str(item.get("timestamp") or "Unknown")[:10]
+            thumbnail_url = item.get("displayUrl", "")
+            views = int(item.get("videoViewCount") or item.get("playCount") or 0)
+            likes = int(item.get("likesCount") or 0)
+            comments = int(item.get("commentsCount") or 0)
+            duration = int(item.get("videoDuration") or 0)
+            hashtags = []
+            
+        is_estimated_views = False
+        if views == 0 and likes > 0:
+            views = likes * 20
+            is_estimated_views = True
+            
+        engagement_rate = round(((likes + comments) / views) * 100, 2) if views > 0 else 0.0
+        
+        # --- Transcript Processing for Apify Fallback ---
+        transcript_data = []
+        whisper_stubbed = True
+        asr_method = "description"
+        error_message = "ASR cascade bypassed during Apify fallback."
+        
+        if is_youtube:
+            try:
+                transcript_data = _extract_yt_transcript(video_id)
+                asr_method = "youtube_captions"
+                whisper_stubbed = False
+                error_message = None
+            except Exception as e:
+                logger.warning(f"youtube-transcript-api failed during Apify fallback: {e}")
+                transcript_data = _description_to_transcript(description, title)
+        else:
+            logger.info("Attempting ASR cascade during Apify fallback for non-YouTube...")
+            transcript_data, asr_method = _asr_transcribe(url)
+            if asr_method == "description":
+                transcript_data = _description_to_transcript(description, title)
+                error_message = "ASR unavailable — using post caption as transcript context."
+            else:
+                whisper_stubbed = False
+                error_message = None
+                
+        if not transcript_data:
+            transcript_data = [{"text": title, "start": 0.0, "duration": 5.0}]
+            
+        return {
+            "video_id": video_id,
+            "platform": "youtube" if is_youtube else "instagram",
+            "title": title,
+            "creator": creator,
+            "follower_count": follower_count,
+            "hashtags": hashtags,
+            "upload_date": upload_date,
+            "thumbnail_url": thumbnail_url,
+            "metrics": {
+                "views": views,
+                "likes": likes,
+                "comments": comments,
+                "duration": duration,
+            },
+            "engagement_rate": engagement_rate,
+            "is_estimated_views": is_estimated_views,
+            "transcript": transcript_data,
+            "whisper_stubbed": whisper_stubbed,
+            "asr_method": asr_method,
+            "error_message": error_message,
+        }
+
+
+class FallbackIngestor(BaseIngestor):
+    """
+    Attempts to ingest using the primary ingestor (yt-dlp). 
+    If it fails, falls back to the secondary ingestor (Apify).
+    """
+    def __init__(self, primary: BaseIngestor, fallback: BaseIngestor):
+        self.primary = primary
+        self.fallback = fallback
+
+    def ingest(self, url: str) -> Dict[str, Any]:
+        try:
+            return self.primary.ingest(url)
+        except Exception as e:
+            logger.warning(f"Primary ingestor failed for {url}: {e}. Trying Apify fallback...")
+            try:
+                return self.fallback.ingest(url)
+            except Exception as fallback_err:
+                logger.error(f"Fallback ingestor also failed: {fallback_err}")
+                raise RuntimeError(f"All ingestion methods failed. Primary: {e} | Fallback: {fallback_err}")
+
+
 def get_ingestor_for_url(url: str) -> BaseIngestor:
-    return RealMediaIngestor()
+    primary = RealMediaIngestor()
+    if settings.apify_api_token:
+        fallback = ApifyIngestor()
+        return FallbackIngestor(primary, fallback)
+    return primary
