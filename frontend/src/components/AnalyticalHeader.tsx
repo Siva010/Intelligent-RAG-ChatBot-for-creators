@@ -54,7 +54,9 @@ export default function AnalyticalHeader({ videoA, videoB }: AnalyticalHeaderPro
   };
 
   const getMetricDiff = (valA: number, valB: number) => {
-    if (!valA || !valB || valA === valB) return null;
+    // Use explicit null checks — falsy would incorrectly suppress 0 values
+    // (e.g. a video with 0 comments). Only skip when valB is 0 (div-by-zero).
+    if (valA == null || valB == null || valB === 0 || valA === valB) return null;
     const diff = valA - valB;
     const percent = (diff / valB) * 100;
     if (Math.abs(percent) < 0.01) return null;
