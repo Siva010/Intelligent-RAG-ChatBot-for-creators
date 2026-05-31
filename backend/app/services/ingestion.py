@@ -635,8 +635,12 @@ class ApifyIngestor(BaseIngestor):
             hashtags = []
         else:
             video_id = item.get("id", "unknown")
-            title = str(item.get("caption") or "Unknown Video")
-            description = title
+            # Capture raw caption before applying the display-title fallback.
+            # description must preserve the full caption text so _description_to_transcript
+            # gets meaningful content even when caption is short or title falls back.
+            raw_caption = str(item.get("caption") or "")
+            title = raw_caption or "Unknown Video"
+            description = raw_caption or title  # never loses caption to the fallback
             creator = item.get("ownerUsername", "Unknown Creator")
             follower_count = int(item.get("ownerFollowersCount") or 0)
             upload_date = str(item.get("timestamp") or "Unknown")[:10]
@@ -646,6 +650,7 @@ class ApifyIngestor(BaseIngestor):
             comments = int(item.get("commentsCount") or 0)
             duration = int(item.get("videoDuration") or 0)
             hashtags = []
+
             
         is_estimated_views = False
         if views == 0 and likes > 0:
