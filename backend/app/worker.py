@@ -9,7 +9,7 @@ from app.config import settings
 from app.services.ingestion import get_ingestor_for_url
 from app.services.cache import video_cache
 from app.services.vector_store import vector_store
-from app.services.agent import stream_session_sync, init_sync_checkpointer, close_sync_checkpointer
+from app.services.agent import stream_session_sync
 
 logger = logging.getLogger(__name__)
 
@@ -30,8 +30,6 @@ def analyze_task(task_id: str, url_a: str, url_b: str, session_id: str):
     r = redis.Redis(connection_pool=pool)
     channel = f"task_{task_id}"
     events_key = f"task_events_{task_id}"
-
-    init_sync_checkpointer()
 
     def _publish(msg_dict: dict):
         msg_str = json.dumps(msg_dict)
@@ -125,7 +123,6 @@ def analyze_task(task_id: str, url_a: str, url_b: str, session_id: str):
         logger.error(f"Worker error: {e}")
         _publish({"type": "error", "message": f"Worker encountered an error: {str(e)}"})
     finally:
-        close_sync_checkpointer() # close SQLite connection
         r.close()   # return connection to pool
         pool.disconnect()  # drain and close the task-scoped pool
     
