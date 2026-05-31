@@ -105,8 +105,11 @@ class VectorStoreManager:
           2. OpenAI text-embedding-3-small (uses OPENAI_API_KEY)
           3. Mock deterministic random vectors (dev fallback only)
         """
-        # Helper for Tenacity exponential backoff on 429s
-        def _is_429(e: Exception) -> bool:
+        # Helper for Tenacity exponential backoff on 429s.
+        # Must be (BaseException) -> bool, not (Exception) -> bool — callable
+        # parameters are contravariant, and retry_if_exception's predicate
+        # signature is Callable[[BaseException], bool].
+        def _is_429(e: BaseException) -> bool:
             return "429" in str(e)
 
         # 1. Google Embeddings (preferred — uses the new google-genai SDK)
@@ -123,7 +126,9 @@ class VectorStoreManager:
                     reraise=True
                 )
                 def _do_embed(text: str):
-                    return client.models.embed_content(
+                    # embed_content exists at runtime but is absent from the
+                    # google-genai type stubs — suppress the stale stub error.
+                    return client.models.embed_content(  # type: ignore[attr-defined]
                         model="gemini-embedding-001",
                         contents=text,
                         config=genai_types.EmbedContentConfig(
@@ -188,7 +193,9 @@ class VectorStoreManager:
                 from google import genai as google_genai
                 from google.genai import types as genai_types
                 client = google_genai.Client(api_key=settings.google_api_key)
-                response = client.models.embed_content(
+                # embed_content exists at runtime but is absent from the
+                # google-genai type stubs — suppress the stale stub error.
+                response = client.models.embed_content(  # type: ignore[attr-defined]
                     model="gemini-embedding-001",
                     contents=query,
                     config=genai_types.EmbedContentConfig(
