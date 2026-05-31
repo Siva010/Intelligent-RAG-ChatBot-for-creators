@@ -1,7 +1,7 @@
+import asyncio
 import logging
 import json
 import re as _re
-import time
 from typing import Annotated, Sequence, TypedDict, Dict, Any, List, Optional
 from langchain_core.messages import BaseMessage, SystemMessage, HumanMessage, AIMessage
 from langchain_core.runnables import RunnableConfig
@@ -328,8 +328,6 @@ async def _astream_llm_with_retry(
     if not settings.google_api_key:
         return None
 
-    import asyncio
-
     for attempt in range(max_attempts):
         try:
             llm = _get_llm(temperature)
@@ -369,7 +367,6 @@ async def chat_assistant_node(state: AgentState, config: RunnableConfig) -> Dict
     user_msg = human_msgs[-1]
     query = extract_text(user_msg.content)
 
-    import asyncio
     # Step 1: Retrieve semantically relevant transcript chunks (blocking call in thread)
     retrieved_context = await asyncio.to_thread(retrieve_relevant_segments, query, state, 6)
 
