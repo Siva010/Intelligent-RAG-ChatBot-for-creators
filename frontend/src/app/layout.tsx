@@ -3,6 +3,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import AuthProvider from "@/components/AuthProvider";
 import AuthStatus from "@/components/AuthStatus";
+import BackendStatus from "@/components/BackendStatus";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -18,6 +19,16 @@ export const metadata: Metadata = {
   title: "CreatorJoy Replica | AI Video Hook Analyzer",
   description:
     "Paste two social video URLs (YouTube, Instagram Reels, TikTok) and get an AI-powered hook comparison, engagement metrics, and RAG-powered chat analysis.",
+  openGraph: {
+    title: "CreatorJoy Replica | AI Video Hook Analyzer",
+    description: "AI-powered hook comparison, engagement metrics, and RAG-powered chat analysis.",
+    type: "website",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "CreatorJoy Replica",
+    description: "Audit Social Video Performance.",
+  },
 };
 
 export default function RootLayout({
@@ -60,7 +71,7 @@ export default function RootLayout({
                 </div>
               </div>
               <div className="flex items-center gap-4 text-xs text-zinc-500">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                <BackendStatus />
                 <span className="font-mono hidden sm:inline-block">v0.1.0-beta</span>
                 <div className="h-4 w-px bg-white/10 mx-2 hidden sm:block"></div>
                 <AuthStatus />

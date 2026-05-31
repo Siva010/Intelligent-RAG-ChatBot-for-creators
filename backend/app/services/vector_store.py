@@ -133,30 +133,34 @@ class VectorStoreManager:
                     retry=retry_if_exception(_is_429),
                     reraise=True
                 )
-                def _do_embed(text: str):
+                def _do_embed(texts_to_embed: list[str]):
                     # embed_content exists at runtime but is absent from the
                     # google-genai type stubs — suppress the stale stub error.
                     return client.models.embed_content(  # type: ignore[attr-defined]
                         model="gemini-embedding-001",
-                        contents=text,
+                        contents=texts_to_embed,
                         config=genai_types.EmbedContentConfig(
                             task_type="RETRIEVAL_DOCUMENT"
                         ),
                     )
 
-                EMBED_DIM = 3072
+                EMBED_DIM = 768
                 embeddings = []
-                for text in texts:
-                    stripped = text.strip() if text else ""
-                    if not stripped:
-                        # Use a zero vector for empty/whitespace chunks
-                        embeddings.append([0.0] * EMBED_DIM)
-                        logger.warning("Skipped empty chunk — inserted zero vector placeholder.")
-                        continue
-                        
-                    response = _do_embed(stripped)
-                    emb: list[float] = (response.embeddings[0].values if response.embeddings else None) or [0.0] * EMBED_DIM
-                    embeddings.append(emb)
+                # Google Gemini allows up to 100 items per batch
+                for i in range(0, len(texts), 100):
+                    batch = texts[i:i+100]
+                    stripped_batch = [t.strip() if t else "" for t in batch]
+                    
+                    # We can pass a list of strings directly
+                    response = _do_embed(stripped_batch)
+                    
+                    for text, emb_obj in zip(stripped_batch, response.embeddings):
+                        if not text:
+                            embeddings.append([0.0] * EMBED_DIM)
+                            logger.warning("Skipped empty chunk — inserted zero vector placeholder.")
+                        else:
+                            emb = emb_obj.values if emb_obj else None
+                            embeddings.append(emb or [0.0] * EMBED_DIM)
 
                 logger.debug(f"Google embeddings generated for {len(texts)} texts")
                 return embeddings
@@ -210,7 +214,7 @@ class VectorStoreManager:
                         task_type="RETRIEVAL_QUERY"
                     ),
                 )
-                EMBED_DIM = 3072
+                EMBED_DIM = 768
                 emb: list[float] = (response.embeddings[0].values if response.embeddings else None) or [0.0] * EMBED_DIM
                 embeddings = [emb]
                 return embeddings
@@ -381,8 +385,8 @@ class VectorStoreManager:
                             "metadata": meta
                         })
                     
-                    # Upsert to Pinecone
-                    self.index.upsert(vectors=vectors_to_upsert)
+                    # Upsert to Pinecone isolating different embedding modes by namespace
+                    self.index.upsert(vectors=vectors_to_upsert, namespace=_current_embedding_mode())
                 elif self.chroma_collection is not None:
                     self.chroma_collection.upsert(
                         documents=texts,
@@ -436,7 +440,8 @@ class VectorStoreManager:
                         vector=query_embeddings[0],
                         top_k=n_results * 2,  # Fetch extra to be safe
                         filter={"video_id": {"$in": video_ids}},
-                        include_metadata=True
+                        include_metadata=True,
+                        namespace=_current_embedding_mode()
                     )
                     
                     for match in response.matches:

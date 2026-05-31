@@ -371,7 +371,8 @@ async def chat_assistant_node(state: AgentState, config: RunnableConfig) -> Dict
     retrieved_context = await asyncio.to_thread(retrieve_relevant_segments, query, state, 6)
 
     # Step 2: Build enriched system prompt with retrieved context injected
-    base_system_content = extract_text(messages[0].content) if messages else format_system_prompt(
+    system_msgs = [m for m in messages if isinstance(m, SystemMessage)]
+    base_system_content = extract_text(system_msgs[0].content) if system_msgs else format_system_prompt(
         state["video_a"], state["video_b"]
     )
 

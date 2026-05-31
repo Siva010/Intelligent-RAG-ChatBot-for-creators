@@ -9,10 +9,17 @@ logger = logging.getLogger(__name__)
 class RedisCache:
     def __init__(self, redis_url: str, ttl_seconds: int = 3600):
         self.ttl = ttl_seconds
-        try:
-            self.client: Optional[redis.Redis] = redis.Redis.from_url(redis_url, decode_responses=True)
-            # Test connection
-            self.client.ping()
+        self.redis_url = redis_url
+        self.client: Optional[redis.Redis] = None
+        self.is_connected = False
+        self._ensure_connected()
+
+    def _ensure_connected(self):
+        if not self.is_connected:
+            try:
+                self.client = redis.Redis.from_url(self.redis_url, decode_responses=True)
+                # Test connection
+                self.client.ping()
             self.is_connected = True
             logger.info(f"Connected to Redis cache at {redis_url}")
         except redis.ConnectionError as e:
@@ -21,6 +28,7 @@ class RedisCache:
             self.client = None
 
     def get(self, url: str) -> Optional[Dict[str, Any]]:
+        self._ensure_connected()
         if not self.is_connected or not self.client:
             return None
         try:
@@ -33,6 +41,7 @@ class RedisCache:
             return None
 
     def set(self, url: str, data: Dict[str, Any]) -> None:
+        self._ensure_connected()
         if not self.is_connected or not self.client:
             return
         try:
@@ -42,6 +51,7 @@ class RedisCache:
             logger.error(f"Redis set error for {url}: {e}")
 
     def clear(self) -> None:
+        self._ensure_connected()
         if not self.is_connected or not self.client:
             return
         try:
