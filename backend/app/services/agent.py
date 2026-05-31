@@ -362,7 +362,11 @@ async def chat_assistant_node(state: AgentState, config: RunnableConfig) -> Dict
     logger.info("LangGraph: chat_assistant node")
     messages = state["messages"]
 
-    user_msg = [m for m in messages if isinstance(m, HumanMessage)][-1]
+    human_msgs = [m for m in messages if isinstance(m, HumanMessage)]
+    if not human_msgs:
+        logger.warning("chat_assistant_node: no HumanMessage found in state — returning fallback.")
+        return {"messages": [AIMessage(content="No query found in the current session state. Please try sending your message again.")]}
+    user_msg = human_msgs[-1]
     query = extract_text(user_msg.content)
 
     import asyncio
