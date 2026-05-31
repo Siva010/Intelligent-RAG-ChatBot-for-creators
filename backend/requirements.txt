@@ -21,3 +21,6 @@ slowapi>=0.1.9 # rate limiting
 langgraph-checkpoint-redis>=0.4.1 # redis persistence for langgraph
 tenacity>=8.5.0 # exponential backoff for network calls
 apify-client>=1.6.4 # apify SDK for scraping fallbacks
+celery>=5.3.0 # distributed task queue for background analysis jobs
+numpy>=1.24.0 # array ops for mock embedding fallback in vector_store
+aiosqlite>=0.19.0 # async SQLite driver for LangGraph checkpoint persistence
