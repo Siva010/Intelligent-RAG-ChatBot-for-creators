@@ -14,7 +14,7 @@ from app.services.ingestion import get_ingestor_for_url
 from app.services.cache import video_cache
 from app.services.vector_store import vector_store
 from app.services.agent import astream_session, stream_chat_message_sse, init_checkpointer, close_checkpointer
-from app.worker import analyze_task
+from app.worker import analyze_task, celery_app
 import uuid
 import redis.asyncio as redis_async
 
@@ -110,21 +110,31 @@ async def analyze_videos(request: Request, req: AnalyzeRequest):
     session_id = hashlib.md5(f"{user_id}|{url_a}|{url_b}".encode()).hexdigest()
 
     task_id = str(uuid.uuid4())
-    # Fire off Celery background task
-    analyze_task.delay(task_id, url_a, url_b, session_id)
+    # Fire off Celery background task with a specific task_id so we can
+    # revoke it later if the client disconnects.
+    analyze_task.apply_async(
+        args=[task_id, url_a, url_b, session_id],
+        task_id=task_id
+    )
     return {"task_id": task_id, "session_id": session_id}
 
 @app.get("/analyze/stream/{task_id}")
-async def analyze_stream(task_id: str):
+async def analyze_stream(task_id: str, request: Request):
     async def _redis_stream_generator():
         # Borrow a connection from the shared pool — no new TCP handshake per request.
         r = redis_async.Redis(connection_pool=_redis_pool)
+        completed = False
         try:
             pubsub = r.pubsub()
             channel = f"task_{task_id}"
             await pubsub.subscribe(channel)
             try:
                 while True:
+                    # Check if client disconnected
+                    if await request.is_disconnected():
+                        logger.info(f"Client disconnected from task {task_id}")
+                        break
+
                     message = await pubsub.get_message(ignore_subscribe_messages=True, timeout=1.0)
                     if message and message["type"] == "message":
                         data = message["data"]
@@ -132,6 +142,7 @@ async def analyze_stream(task_id: str):
                         try:
                             msg_dict = json.loads(str(data))
                             if msg_dict.get("type") in ("complete", "error"):
+                                completed = True
                                 break
                         except json.JSONDecodeError:
                             pass
@@ -141,6 +152,11 @@ async def analyze_stream(task_id: str):
         finally:
             # Release connection back to the pool (does not close the underlying socket).
             await r.aclose()
+            
+            # If the loop exited early (e.g. client disconnect), cancel the Celery task
+            if not completed:
+                logger.info(f"Revoking Celery task {task_id} due to stream disconnect")
+                celery_app.control.revoke(task_id, terminate=True, signal="SIGTERM")
 
     return EventSourceResponse(_redis_stream_generator())
 
