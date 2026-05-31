@@ -328,9 +328,9 @@ async def _astream_llm_with_retry(
     if not settings.google_api_key:
         return None
 
+    llm = _get_llm(temperature)
     for attempt in range(max_attempts):
         try:
-            llm = _get_llm(temperature)
             response_msg = None
             async for chunk in llm.astream(messages, config=config):
                 if response_msg is None:
