@@ -65,7 +65,7 @@ export default function AnalyticalHeader({ videoA, videoB }: AnalyticalHeaderPro
 
   const getYouTubeEmbedUrl = (videoId: string, platform: string) => {
     if (platform === 'youtube') {
-      return `https://www.youtube.com/embed/${videoId}?rel=0&modestbranding=1`;
+      return `https://www.youtube.com/embed/${videoId}?rel=0&modestbranding=1&enablejsapi=1`;
     }
     return null;
   };
@@ -87,6 +87,7 @@ export default function AnalyticalHeader({ videoA, videoB }: AnalyticalHeaderPro
         <div className="relative w-full aspect-video bg-zinc-950 overflow-hidden">
           {embedUrl ? (
             <iframe
+              id={`yt-embed-${label.toLowerCase().replace(/\s+/g, '-')}`}
               src={embedUrl}
               title={data.title}
               className="w-full h-full"

@@ -61,6 +61,32 @@ export default function ChatConsole({
     `Suggest improvements for ${loser} based on what worked in ${winner}.`,
   ];
 
+  const seekVideo = (videoLabel: string, timestamp: string) => {
+    // Determine which video to target
+    const isVideoA = videoLabel.endsWith('A');
+    const videoData = isVideoA ? videoA : videoB;
+    
+    // Only YouTube supports this simple iframe seek method
+    if (videoData?.platform !== 'youtube') return;
+
+    // Parse MM:SS to seconds
+    const [mins, secs] = timestamp.split(':').map(Number);
+    const totalSeconds = mins * 60 + secs;
+
+    // Find the iframe added in AnalyticalHeader.tsx
+    const iframeId = `yt-embed-video-${isVideoA ? 'a' : 'b'}`;
+    const iframe = document.getElementById(iframeId) as HTMLIFrameElement;
+    
+    if (iframe && iframe.src) {
+      // Create a URL object to safely modify query params
+      const url = new URL(iframe.src);
+      url.searchParams.set('start', totalSeconds.toString());
+      url.searchParams.set('autoplay', '1');
+      // Updating the src forces the iframe to reload at the specified timestamp
+      iframe.src = url.toString();
+    }
+  };
+
   // Recursively process React node tree, replacing citation text with styled badges.
   // This handles citations that appear inside bold, italic, code, or other inline elements.
   const processCitationsInNode = (node: React.ReactNode, keyPrefix: string): React.ReactNode => {
@@ -109,11 +135,12 @@ export default function ChatConsole({
       parts.push(
         <span
           key={`${keyPrefix}-${startIndex}`}
+          onClick={() => seekVideo(videoLabel, timestamp)}
           className={`inline-flex items-center gap-1 px-2 py-0.5 mx-1 text-[10px] uppercase font-black tracking-widest rounded-md border cursor-pointer select-none transition-all hover:scale-105 duration-200 ${isVideoA
             ? 'bg-sky-500/10 text-sky-300 border-sky-500/30 hover:bg-sky-500/20'
             : 'bg-cyan-500/10 text-cyan-300 border-cyan-500/30 hover:bg-cyan-500/20'
             }`}
-          title={`Jump to ${videoLabel} at ${timestamp}`}
+          title={`Click to jump to ${videoLabel} at ${timestamp}`}
         >
           <PlayCircle className="w-3 h-3 text-sky-400" />
           {videoLabel} @ {timestamp}
