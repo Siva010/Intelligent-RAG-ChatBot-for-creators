@@ -82,6 +82,7 @@ export default function Home() {
         const lines = sseBuffer.split('\n');
         sseBuffer = lines.pop() ?? '';
 
+        let workerError: string | null = null;
         for (const line of lines) {
           if (!line.startsWith('data: ')) continue;
           const dataStr = line.slice(6).trim();
@@ -109,12 +110,18 @@ export default function Home() {
                 setChatMessages(msg.data.chat_history);
               }
             } else if (msg.type === 'error') {
-              throw new Error(msg.message);
+              // Capture the error message and break out of the line loop.
+              // Throwing here would be inside a catch block that only re-throws
+              // non-SyntaxErrors — fragile if that catch changes. Using a flag
+              // keeps error propagation explicit and outside the JSON parse scope.
+              workerError = msg.message as string;
+              break;
             }
           } catch (e: unknown) {
             if (!(e instanceof SyntaxError)) throw e;
           }
         }
+        if (workerError) throw new Error(workerError);
       }
     } catch (err: unknown) {
       console.error('Ingestion failed:', err);
