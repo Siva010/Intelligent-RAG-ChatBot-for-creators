@@ -646,7 +646,15 @@ class ApifyIngestor(BaseIngestor):
             views = int(item.get("viewCount") or 0)
             likes = int(item.get("likes") or item.get("likeCount") or 0)
             comments = int(item.get("commentsCount") or item.get("commentCount") or 0)
-            duration = int(item.get("duration") or 0)
+            raw_duration = item.get("duration") or 0
+            if isinstance(raw_duration, str) and ":" in raw_duration:
+                parts = raw_duration.split(":")
+                duration = sum(int(x) * 60 ** i for i, x in enumerate(reversed(parts)))
+            else:
+                try:
+                    duration = int(raw_duration)
+                except ValueError:
+                    duration = 0
             hashtags = []
         else:
             video_id = item.get("id", "unknown")
