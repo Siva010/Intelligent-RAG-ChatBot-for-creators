@@ -550,9 +550,11 @@ def stream_session_sync(
     asyncio.set_event_loop(loop)
     
     async def main_agen():
-        conn = redis_async.Redis.from_url(settings.redis_url, decode_responses=False)
         try:
-            checkpointer = AsyncRedisSaver(redis_client=conn)
+            # Note: Since Celery is currently disabled, get_checkpointer() returns the shared InMemorySaver
+            # for the FastAPI process. If Celery is enabled later, a distributed checkpointer (Redis/Postgres)
+            # must be restored.
+            checkpointer = get_checkpointer()
             agent_graph = workflow.compile(checkpointer=checkpointer)
 
             config: RunnableConfig = {"configurable": {"thread_id": session_id}}
