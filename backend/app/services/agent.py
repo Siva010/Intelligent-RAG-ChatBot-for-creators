@@ -627,8 +627,6 @@ def stream_session_sync(
                 "is_mock_analysis": is_mock,
                 "chat_history": chat_history,
             })
-        finally:
-            await conn.aclose()
 
     agen = main_agen()
     while True:
