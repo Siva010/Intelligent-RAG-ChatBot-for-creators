@@ -3,81 +3,59 @@ import logging
 import json
 import re as _re
 from typing import Annotated, Sequence, TypedDict, Dict, Any, List, Optional
-from langchain_core.messages import BaseMessage, SystemMessage, HumanMessage, AIMessage
+from langchain_core.messages import BaseMessage, SystemMessage, HumanMessage, AIMessage, messages_to_dict, messages_from_dict
 from langchain_core.runnables import RunnableConfig
 from langgraph.graph import StateGraph, START, END
 from langgraph.graph.message import add_messages
-from langgraph.checkpoint.redis.aio import AsyncRedisSaver
 import redis.asyncio as redis_async
-
-# ---------------------------------------------------------------------------
-# Upstash RedisJSON Patch
-# ---------------------------------------------------------------------------
-# Upstash Redis explicitly forbids the legacy `.` JSONPath and requires `$`.
-# The langgraph-checkpoint-redis library currently hardcodes `.` in its JSON.GET
-# calls, which causes a synchronous crash. We monkey-patch the redis-py pipeline
-# executor to replace `.` with `$` when it detects a JSON.GET command.
-_original_execute_command = redis_async.client.Pipeline.execute_command
-_original_execute = redis_async.client.Pipeline.execute
-
-def _patched_execute_command(self, *args, **kwargs):
-    if not hasattr(self, '_patched_json_get_indices'):
-        self._patched_json_get_indices = set()
-    if args and args[0] == 'JSON.GET' and '.' in args:
-        args = tuple('$' if a == '.' else a for a in args)
-        self._patched_json_get_indices.add(len(self.command_stack))
-    return _original_execute_command(self, *args, **kwargs)
-
-async def _patched_execute(self, *args, **kwargs):
-    results = await _original_execute(self, *args, **kwargs)
-    if hasattr(self, '_patched_json_get_indices'):
-        for i in self._patched_json_get_indices:
-            if i < len(results) and isinstance(results[i], list) and len(results[i]) == 1:
-                results[i] = results[i][0]
-    return results
-
-redis_async.client.Pipeline.execute_command = _patched_execute_command
-redis_async.client.Pipeline.execute = _patched_execute
 from app.config import settings
 from app.services.vector_store import vector_store
 
 logger = logging.getLogger(__name__)
 
-
 # ---------------------------------------------------------------------------
-# Shared Redis checkpoint connection
+# Shared Redis Checkpoint Connection (Manual State Saver)
 # ---------------------------------------------------------------------------
 _redis_conn: Optional[redis_async.Redis] = None
-_checkpointer: Optional[AsyncRedisSaver] = None
-
 
 async def init_checkpointer() -> None:
     """Open the shared Redis connection. Call once at application startup."""
-    global _redis_conn, _checkpointer
-    # LangGraph RedisSaver stores binary data, so decode_responses must be False
-    _redis_conn = redis_async.Redis.from_url(settings.redis_url, decode_responses=False)
-    _checkpointer = AsyncRedisSaver(redis_client=_redis_conn)
-    logger.info("Redis checkpoint connection opened (shared).")
-
+    global _redis_conn
+    _redis_conn = redis_async.Redis.from_url(settings.redis_url, decode_responses=True)
+    logger.info("Redis connection opened for manual session state.")
 
 async def close_checkpointer() -> None:
-    """Close the shared Redis connection. Call once at application shutdown."""
-    global _redis_conn, _checkpointer
+    """Close the shared Redis connection. Call at shutdown."""
+    global _redis_conn
     if _redis_conn:
         await _redis_conn.aclose()
         _redis_conn = None
-        _checkpointer = None
-        logger.info("Redis checkpoint connection closed.")
+        logger.info("Redis connection closed.")
+
+async def save_session(session_id: str, state: Dict[str, Any]) -> None:
+    if not _redis_conn:
+        return
+    state_to_save = state.copy()
+    if "messages" in state_to_save:
+        state_to_save["messages"] = messages_to_dict(state_to_save["messages"])
+    await _redis_conn.set(f"creatorjoy:session:{session_id}", json.dumps(state_to_save), ex=86400)
+
+async def load_session(session_id: str) -> Optional[Dict[str, Any]]:
+    if not _redis_conn:
+        return None
+    data_str = await _redis_conn.get(f"creatorjoy:session:{session_id}")
+    if not data_str:
+        return None
+    try:
+        state = json.loads(data_str)
+        if "messages" in state:
+            state["messages"] = messages_from_dict(state["messages"])
+        return state
+    except Exception as e:
+        logger.error(f"Failed to load session: {e}")
+        return None
 
 
-def get_checkpointer() -> AsyncRedisSaver:
-    """Return the shared checkpointer. Raises if init_checkpointer() was not called."""
-    if _checkpointer is None:
-        raise RuntimeError(
-            "Checkpointer not initialised. "
-            "Ensure init_checkpointer() is called during app startup."
-        )
-    return _checkpointer
 
 
 # ---------------------------------------------------------------------------
@@ -454,13 +432,7 @@ workflow.add_edge("chat_assistant", END)
 async def initialize_session(
     session_id: str, video_a: Dict[str, Any], video_b: Dict[str, Any]
 ) -> Dict[str, Any]:
-    """
-    Initialises a new comparative analysis session and generates the initial hook audit.
-    Now async — uses ainvoke so generate_hook_node can stream via LangGraph without
-    blocking the FastAPI event loop.
-    """
-    memory = get_checkpointer()
-    agent_graph = workflow.compile(checkpointer=memory)
+    agent_graph = workflow.compile()
 
     config = {"configurable": {"thread_id": session_id}}
     initial_state = {
@@ -473,6 +445,7 @@ async def initialize_session(
     }
 
     res = await agent_graph.ainvoke(initial_state, config=config)
+    await save_session(session_id, res)
 
     return {
         "hook_analysis": res.get("hook_analysis", ""),
@@ -491,29 +464,16 @@ async def initialize_session(
 async def astream_session(
     session_id: str, video_a: Dict[str, Any], video_b: Dict[str, Any]
 ):
-    """
-    Async generator that streams the initial hook audit token-by-token.
-
-    Yields tuples:
-      ("hook_chunk", str)      — one LLM token at a time
-      ("done",       dict)     — final session metadata after streaming completes
-
-    Using astream_events lets the hook analysis appear in the chat as it's generated,
-    satisfying the spec requirement that all responses must stream.
-    """
-    memory = get_checkpointer()
-    agent_graph = workflow.compile(checkpointer=memory)
-
+    agent_graph = workflow.compile()
     config: RunnableConfig = {"configurable": {"thread_id": session_id}}
 
-    # Check if this thread already has an initialized session
-    state_info = await agent_graph.aget_state(config)
-    if state_info and state_info.values and state_info.values.get("hook_analysis"):
+    state_info = await load_session(session_id)
+    if state_info and state_info.get("hook_analysis"):
         logger.info(f"Session {session_id} already exists. Returning cached chat history.")
-        hook_analysis = state_info.values.get("hook_analysis", "")
-        is_mock = state_info.values.get("is_mock_analysis", False)
+        hook_analysis = state_info.get("hook_analysis", "")
+        is_mock = state_info.get("is_mock_analysis", False)
         chat_history = []
-        for m in state_info.values.get("messages", []):
+        for m in state_info.get("messages", []):
             if m.type in ("human", "ai"):
                 chat_history.append({
                     "role": "user" if m.type == "human" else "assistant",
@@ -535,75 +495,66 @@ async def astream_session(
         "session_id": session_id,
     }
 
-    # Yield the section header immediately so the chat feels responsive
     progress_msg = "> *Building analysis context & generating hook audit...*\n\n"
     yield ("hook_chunk", progress_msg)
-    
+
     header = "### Initial Hook Audit & Diagnostics\n\n"
     yield ("hook_chunk", header)
 
     emitted_any = False
+    hook_analysis = ""
     async for event in agent_graph.astream_events(initial_state, config=config, version="v2"):
         kind = event["event"]
         if kind == "on_chat_model_stream":
             token = event["data"]["chunk"].content
             if token and isinstance(token, str):
                 emitted_any = True
+                hook_analysis += token
                 yield ("hook_chunk", token)
 
-    # Collect final state for the complete event
-    final = await agent_graph.aget_state(config)
-    hook_analysis = ""
-    is_mock = False
-    chat_history: List[Dict[str, str]] = []
+    final_state = initial_state.copy()
+    final_state["hook_analysis"] = hook_analysis
+    await save_session(session_id, final_state)
 
-    if final and final.values:
-        hook_analysis = final.values.get("hook_analysis", "")
-        is_mock = final.values.get("is_mock_analysis", False)
-        for m in final.values.get("messages", []):
-            if m.type in ("human", "ai"):
-                chat_history.append({
-                    "role": "user" if m.type == "human" else "assistant",
-                    "content": extract_text(m.content),
-                })
-
-    # If no tokens streamed (LLM unavailable → mock path), flush the mock text at once
     if not emitted_any and hook_analysis:
         yield ("hook_chunk", hook_analysis)
 
     yield ("done", {
         "hook_analysis": hook_analysis,
-        "is_mock_analysis": is_mock,
-        "chat_history": chat_history,
+        "is_mock_analysis": False,
+        "chat_history": [],
     })
-
 
 def stream_session_sync(
     session_id: str, video_a: Dict[str, Any], video_b: Dict[str, Any]
 ):
-    """
-    Synchronous generator that streams the initial hook audit token-by-token.
-    Used by the Celery worker to avoid async nested loops.
-    """
     import asyncio
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     
     async def main_agen():
-        conn = redis_async.Redis.from_url(settings.redis_url, decode_responses=False)
+        # Make a temporary connection for sync execution since _redis_conn is bound to Uvicorn loop
+        temp_conn = redis_async.Redis.from_url(settings.redis_url, decode_responses=True)
         try:
-            checkpointer = AsyncRedisSaver(redis_client=conn)
-            agent_graph = workflow.compile(checkpointer=checkpointer)
-
+            agent_graph = workflow.compile()
             config: RunnableConfig = {"configurable": {"thread_id": session_id}}
 
-            state_info = await agent_graph.aget_state(config)
-            if state_info and state_info.values and state_info.values.get("hook_analysis"):
+            data_str = await temp_conn.get(f"creatorjoy:session:{session_id}")
+            state_info = None
+            if data_str:
+                try:
+                    state_info = json.loads(data_str)
+                    if "messages" in state_info:
+                        state_info["messages"] = messages_from_dict(state_info["messages"])
+                except:
+                    pass
+
+            if state_info and state_info.get("hook_analysis"):
                 logger.info(f"Session {session_id} already exists. Returning cached chat history.")
-                hook_analysis = state_info.values.get("hook_analysis", "")
-                is_mock = state_info.values.get("is_mock_analysis", False)
+                hook_analysis = state_info.get("hook_analysis", "")
+                is_mock = state_info.get("is_mock_analysis", False)
                 chat_history = []
-                for m in state_info.values.get("messages", []):
+                for m in state_info.get("messages", []):
                     if m.type in ("human", "ai"):
                         chat_history.append({
                             "role": "user" if m.type == "human" else "assistant",
@@ -632,41 +583,35 @@ def stream_session_sync(
             yield ("hook_chunk", header)
 
             emitted_any = False
-            
+            hook_analysis = ""
             async for event in agent_graph.astream_events(initial_state, config=config, version="v2"):
                 kind = event["event"]
                 if kind == "on_chat_model_stream":
                     token = event["data"]["chunk"].content
                     if token and isinstance(token, str):
                         emitted_any = True
+                        hook_analysis += token
                         yield ("hook_chunk", token)
 
-            final = await agent_graph.aget_state(config)
-
-            hook_analysis = ""
-            is_mock = False
-            chat_history: List[Dict[str, str]] = []
-
-            if final and final.values:
-                hook_analysis = final.values.get("hook_analysis", "")
-                is_mock = final.values.get("is_mock_analysis", False)
-                for m in final.values.get("messages", []):
-                    if m.type in ("human", "ai"):
-                        chat_history.append({
-                            "role": "user" if m.type == "human" else "assistant",
-                            "content": extract_text(m.content),
-                        })
+            final_state = initial_state.copy()
+            final_state["hook_analysis"] = hook_analysis
+            state_to_save = final_state.copy()
+            state_to_save["messages"] = messages_to_dict(state_to_save["messages"])
+            await temp_conn.set(f"creatorjoy:session:{session_id}", json.dumps(state_to_save), ex=86400)
 
             if not emitted_any and hook_analysis:
                 yield ("hook_chunk", hook_analysis)
 
             yield ("done", {
                 "hook_analysis": hook_analysis,
-                "is_mock_analysis": is_mock,
-                "chat_history": chat_history,
+                "is_mock_analysis": False,
+                "chat_history": [],
             })
+        except Exception as e:
+            logger.error(f"Error in stream_session_sync: {e}")
+            raise
         finally:
-            await conn.aclose()
+            await temp_conn.aclose()
 
     agen = main_agen()
     while True:
@@ -685,47 +630,37 @@ def stream_session_sync(
 
 
 async def stream_chat_message_sse(session_id: str, message: str):
-    """
-    Async generator that yields the AI response token-by-token for SSE streaming.
-    Uses LangGraph's native astream_events (v2) to capture true LLM output chunks
-    safely across different LangGraph versions.
-    """
-    memory = get_checkpointer()
-    agent_graph = workflow.compile(checkpointer=memory)
-
-    config: RunnableConfig = {"configurable": {"thread_id": session_id}}
-
     try:
-        state_info = await agent_graph.aget_state(config)
-        if state_info is None or state_info.values is None or not state_info.values.get("hook_analysis"):
+        state_info = await load_session(session_id)
+        if state_info is None or not state_info.get("hook_analysis"):
             yield dict(data=json.dumps({"chunk": "**Error:** Session not found. Call /analyze first. "}))
             yield dict(data="[DONE]")
             return
 
-        inputs = {"messages": [HumanMessage(content=message)]}
+        state_info["messages"].append(HumanMessage(content=message))
+        
+        agent_graph = workflow.compile()
+        config: RunnableConfig = {"configurable": {"thread_id": session_id}}
 
         emitted_any = False
-        # astream_events is the safest way to extract streaming chunks in LangChain/LangGraph
-        async for event in agent_graph.astream_events(inputs, config=config, version="v2"):
+        ai_reply = ""
+        
+        async for event in agent_graph.astream_events(state_info, config=config, version="v2"):
             kind = event["event"]
             if kind == "on_chat_model_stream":
                 chunk_content = event["data"]["chunk"].content
                 if chunk_content and isinstance(chunk_content, str):
                     emitted_any = True
+                    ai_reply += chunk_content
                     yield dict(data=json.dumps({"chunk": chunk_content}))
 
         if not emitted_any:
-            # If no stream events fired, yield the final state's message
-            final_state = await agent_graph.aget_state(config)
-            if final_state and final_state.values and final_state.values.get("messages"):
-                last_msg = final_state.values["messages"][-1]
-                content = getattr(last_msg, "content", "")
-                if last_msg.type == "ai" and content:
-                    yield dict(data=json.dumps({"chunk": content}))
-                else:
-                    yield dict(data=json.dumps({"chunk": "**Error:** The AI generated an empty response. It might have been blocked by safety filters or an internal graph error occurred."}))
-            else:
-                yield dict(data=json.dumps({"chunk": "**Error:** The agent graph did not return a valid state."}))
+            # Check if there is a mock fallback or internal error
+            ai_reply = "**Error:** The AI generated an empty response. It might have been blocked by safety filters."
+            yield dict(data=json.dumps({"chunk": ai_reply}))
+
+        state_info["messages"].append(AIMessage(content=ai_reply))
+        await save_session(session_id, state_info)
 
     except Exception as e:
         import traceback
@@ -733,3 +668,4 @@ async def stream_chat_message_sse(session_id: str, message: str):
         yield dict(data=json.dumps({"chunk": f"**Error:** {str(e)}"}))
 
     yield dict(data="[DONE]")
+
