@@ -7,41 +7,30 @@ from langchain_core.messages import BaseMessage, SystemMessage, HumanMessage, AI
 from langchain_core.runnables import RunnableConfig
 from langgraph.graph import StateGraph, START, END
 from langgraph.graph.message import add_messages
-from langgraph.checkpoint.redis.aio import AsyncRedisSaver
-import redis.asyncio as redis_async
+from langgraph.checkpoint.memory import InMemorySaver
 from app.config import settings
 from app.services.vector_store import vector_store
 
 logger = logging.getLogger(__name__)
 
-
 # ---------------------------------------------------------------------------
-# Shared Redis checkpoint connection
+# Shared InMemory checkpoint connection
 # ---------------------------------------------------------------------------
-_redis_conn: Optional[redis_async.Redis] = None
-_checkpointer: Optional[AsyncRedisSaver] = None
-
+_checkpointer: Optional[InMemorySaver] = None
 
 async def init_checkpointer() -> None:
-    """Open the shared Redis connection. Call once at application startup."""
-    global _redis_conn, _checkpointer
-    # LangGraph RedisSaver stores binary data, so decode_responses must be False
-    _redis_conn = redis_async.Redis.from_url(settings.redis_url, decode_responses=False)
-    _checkpointer = AsyncRedisSaver(redis_client=_redis_conn)
-    logger.info("Redis checkpoint connection opened (shared).")
-
+    """Initialize the shared InMemory checkpointer. Call once at application startup."""
+    global _checkpointer
+    _checkpointer = InMemorySaver()
+    logger.info("InMemory checkpoint connection opened (shared).")
 
 async def close_checkpointer() -> None:
-    """Close the shared Redis connection. Call once at application shutdown."""
-    global _redis_conn, _checkpointer
-    if _redis_conn:
-        await _redis_conn.aclose()
-        _redis_conn = None
-        _checkpointer = None
-        logger.info("Redis checkpoint connection closed.")
+    """Close the shared InMemory connection. Call once at application shutdown."""
+    global _checkpointer
+    _checkpointer = None
+    logger.info("InMemory checkpoint connection closed.")
 
-
-def get_checkpointer() -> AsyncRedisSaver:
+def get_checkpointer() -> InMemorySaver:
     """Return the shared checkpointer. Raises if init_checkpointer() was not called."""
     if _checkpointer is None:
         raise RuntimeError(
@@ -666,13 +655,13 @@ async def stream_chat_message_sse(session_id: str, message: str):
 
     config: RunnableConfig = {"configurable": {"thread_id": session_id}}
 
-    state_info = await agent_graph.aget_state(config)
-    if state_info is None or state_info.values is None or not state_info.values.get("hook_analysis"):
-        yield dict(data=json.dumps({"chunk": "**Error:** Session not found. Call /analyze first. "}))
-        yield dict(data="[DONE]")
-        return
-
     try:
+        state_info = await agent_graph.aget_state(config)
+        if state_info is None or state_info.values is None or not state_info.values.get("hook_analysis"):
+            yield dict(data=json.dumps({"chunk": "**Error:** Session not found. Call /analyze first. "}))
+            yield dict(data="[DONE]")
+            return
+
         inputs = {"messages": [HumanMessage(content=message)]}
 
         emitted_any = False
