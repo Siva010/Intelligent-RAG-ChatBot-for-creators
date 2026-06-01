@@ -7,30 +7,57 @@ from langchain_core.messages import BaseMessage, SystemMessage, HumanMessage, AI
 from langchain_core.runnables import RunnableConfig
 from langgraph.graph import StateGraph, START, END
 from langgraph.graph.message import add_messages
-from langgraph.checkpoint.memory import InMemorySaver
+from langgraph.checkpoint.redis.aio import AsyncRedisSaver
+import redis.asyncio as redis_async
+
+# ---------------------------------------------------------------------------
+# Upstash RedisJSON Patch
+# ---------------------------------------------------------------------------
+# Upstash Redis explicitly forbids the legacy `.` JSONPath and requires `$`.
+# The langgraph-checkpoint-redis library currently hardcodes `.` in its JSON.GET
+# calls, which causes a synchronous crash. We monkey-patch the redis-py pipeline
+# executor to replace `.` with `$` when it detects a JSON.GET command.
+_original_execute_command = redis_async.client.Pipeline.execute_command
+
+def _patched_execute_command(self, *args, **kwargs):
+    if args and args[0] == 'JSON.GET':
+        args = tuple('$' if a == '.' else a for a in args)
+    return _original_execute_command(self, *args, **kwargs)
+
+redis_async.client.Pipeline.execute_command = _patched_execute_command
 from app.config import settings
 from app.services.vector_store import vector_store
 
 logger = logging.getLogger(__name__)
 
+
 # ---------------------------------------------------------------------------
-# Shared InMemory checkpoint connection
+# Shared Redis checkpoint connection
 # ---------------------------------------------------------------------------
-_checkpointer: Optional[InMemorySaver] = None
+_redis_conn: Optional[redis_async.Redis] = None
+_checkpointer: Optional[AsyncRedisSaver] = None
+
 
 async def init_checkpointer() -> None:
-    """Initialize the shared InMemory checkpointer. Call once at application startup."""
-    global _checkpointer
-    _checkpointer = InMemorySaver()
-    logger.info("InMemory checkpoint connection opened (shared).")
+    """Open the shared Redis connection. Call once at application startup."""
+    global _redis_conn, _checkpointer
+    # LangGraph RedisSaver stores binary data, so decode_responses must be False
+    _redis_conn = redis_async.Redis.from_url(settings.redis_url, decode_responses=False)
+    _checkpointer = AsyncRedisSaver(redis_client=_redis_conn)
+    logger.info("Redis checkpoint connection opened (shared).")
+
 
 async def close_checkpointer() -> None:
-    """Close the shared InMemory connection. Call once at application shutdown."""
-    global _checkpointer
-    _checkpointer = None
-    logger.info("InMemory checkpoint connection closed.")
+    """Close the shared Redis connection. Call once at application shutdown."""
+    global _redis_conn, _checkpointer
+    if _redis_conn:
+        await _redis_conn.aclose()
+        _redis_conn = None
+        _checkpointer = None
+        logger.info("Redis checkpoint connection closed.")
 
-def get_checkpointer() -> InMemorySaver:
+
+def get_checkpointer() -> AsyncRedisSaver:
     """Return the shared checkpointer. Raises if init_checkpointer() was not called."""
     if _checkpointer is None:
         raise RuntimeError(
@@ -550,11 +577,9 @@ def stream_session_sync(
     asyncio.set_event_loop(loop)
     
     async def main_agen():
+        conn = redis_async.Redis.from_url(settings.redis_url, decode_responses=False)
         try:
-            # Note: Since Celery is currently disabled, get_checkpointer() returns the shared InMemorySaver
-            # for the FastAPI process. If Celery is enabled later, a distributed checkpointer (Redis/Postgres)
-            # must be restored.
-            checkpointer = get_checkpointer()
+            checkpointer = AsyncRedisSaver(redis_client=conn)
             agent_graph = workflow.compile(checkpointer=checkpointer)
 
             config: RunnableConfig = {"configurable": {"thread_id": session_id}}
@@ -627,9 +652,8 @@ def stream_session_sync(
                 "is_mock_analysis": is_mock,
                 "chat_history": chat_history,
             })
-        except Exception as e:
-            logger.error(f"Error in stream_session_sync: {e}")
-            raise
+        finally:
+            await conn.aclose()
 
     agen = main_agen()
     while True:
