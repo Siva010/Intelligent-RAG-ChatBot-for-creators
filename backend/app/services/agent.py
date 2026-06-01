@@ -627,6 +627,9 @@ def stream_session_sync(
                 "is_mock_analysis": is_mock,
                 "chat_history": chat_history,
             })
+        except Exception as e:
+            logger.error(f"Error in stream_session_sync: {e}")
+            raise
 
     agen = main_agen()
     while True:
