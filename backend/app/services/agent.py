@@ -595,7 +595,7 @@ def stream_session_sync(
 
             final_state = initial_state.copy()
             final_state["hook_analysis"] = hook_analysis
-            state_to_save = final_state.copy()
+            state_to_save: Dict[str, Any] = dict(final_state)
             state_to_save["messages"] = messages_to_dict(state_to_save["messages"])
             await temp_conn.set(f"creatorjoy:session:{session_id}", json.dumps(state_to_save), ex=86400)
 
