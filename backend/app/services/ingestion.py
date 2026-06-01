@@ -609,7 +609,7 @@ class ApifyIngestor(BaseIngestor):
         
         if is_youtube:
             run_input = {"startUrls": [{"url": url}], "maxResults": 1}
-            actor_id = "microworlds/youtube-scraper"
+            actor_id = "streamers/youtube-scraper"
         else:
             run_input = {"directUrls": [url]}
             actor_id = "apify/instagram-scraper"
@@ -640,12 +640,12 @@ class ApifyIngestor(BaseIngestor):
             title = str(item.get("title") or "Unknown Video")
             description = str(item.get("description") or title)
             creator = item.get("channelName", "Unknown Creator")
-            follower_count = int(item.get("channelNumberOfSubscribers") or 0)
+            follower_count = int(item.get("channelNumberOfSubscribers") or item.get("numberOfSubscribers") or 0)
             upload_date = str(item.get("date") or "Unknown")[:10]
             thumbnail_url = item.get("thumbnailUrl", "")
             views = int(item.get("viewCount") or 0)
-            likes = int(item.get("likeCount") or 0)
-            comments = int(item.get("commentCount") or 0)
+            likes = int(item.get("likes") or item.get("likeCount") or 0)
+            comments = int(item.get("commentsCount") or item.get("commentCount") or 0)
             duration = int(item.get("duration") or 0)
             hashtags = []
         else:
