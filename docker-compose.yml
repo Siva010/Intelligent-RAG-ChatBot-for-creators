@@ -52,13 +52,12 @@ services:
       - ./frontend:/app
       # Avoid local node_modules overriding the container's node_modules
       - /app/node_modules
-      - /app/.next
     environment:
       - NEXT_PUBLIC_API_URL=http://localhost:8000
+      - CHOKIDAR_USEPOLLING=true
+      - WATCHPACK_POLLING=true
     depends_on:
       - api
-    # For Next.js hot-reloading in Windows/Docker environments
-    # you sometimes need CHOKIDAR_USEPOLLING=true, but we try default first.
 
 volumes:
   redis_data:
