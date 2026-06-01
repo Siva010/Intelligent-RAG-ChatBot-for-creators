@@ -66,9 +66,12 @@ export default function AnalyticalHeader({ videoA, videoB }: AnalyticalHeaderPro
     return { diff, percent: percent.toFixed(1), isPositive: diff > 0 };
   };
 
-  const getYouTubeEmbedUrl = (videoId: string, platform: string) => {
+  const getEmbedUrl = (videoId: string, platform: string) => {
     if (platform === 'youtube') {
       return `https://www.youtube.com/embed/${videoId}?rel=0&modestbranding=1&enablejsapi=1`;
+    }
+    if (platform === 'instagram') {
+      return `https://www.instagram.com/p/${videoId}/embed/`;
     }
     return null;
   };
@@ -81,21 +84,22 @@ export default function AnalyticalHeader({ videoA, videoB }: AnalyticalHeaderPro
     borderClass: string
   ) => {
     const metrics = data.metrics;
-    const embedUrl = getYouTubeEmbedUrl(data.video_id, data.platform);
+    const embedUrl = getEmbedUrl(data.video_id, data.platform);
 
     return (
       <div className={`flex flex-col flex-1 rounded-2xl bg-zinc-900/40 border ${borderClass} backdrop-blur-md shadow-xl overflow-hidden animate-fade-in-up`}>
 
         {/* Thumbnail / Embed */}
-        <div className="relative w-full aspect-video bg-zinc-950 overflow-hidden">
+        <div className={`relative w-full bg-zinc-950 overflow-hidden ${data.platform === 'instagram' ? 'aspect-[9/16] max-h-[600px] bg-white' : 'aspect-video'}`}>
           {embedUrl ? (
             <iframe
-              id={`yt-embed-${label.toLowerCase().replace(/\s+/g, '-')}`}
+              id={`embed-${label.toLowerCase().replace(/\s+/g, '-')}`}
               src={embedUrl}
               title={data.title}
               className="w-full h-full"
               allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
               allowFullScreen
+              scrolling="no"
             />
           ) : data.thumbnail_url ? (
             // eslint-disable-next-line @next/next/no-img-element
@@ -112,29 +116,33 @@ export default function AnalyticalHeader({ videoA, videoB }: AnalyticalHeaderPro
               <Play className="w-10 h-10 text-zinc-700" />
             </div>
           )}
-          {/* Platform badge */}
-          <span className={`absolute top-3 left-3 px-2.5 py-1 text-[10px] font-black tracking-widest uppercase rounded-full ${accentClass}`}>
-            {label} · {data.platform}
-          </span>
-          {data.whisper_stubbed && (
-            <span className="absolute top-3 right-3 px-2 py-0.5 text-[10px] font-medium bg-amber-500/80 text-zinc-900 rounded">
-              Caption Fallback
-            </span>
-          )}
-          {!data.whisper_stubbed && data.asr_method === 'whisper' && (
-            <span className="absolute top-3 right-3 px-2 py-0.5 text-[10px] font-medium bg-violet-500/80 text-white rounded">
-              Whisper ASR
-            </span>
-          )}
-          {!data.whisper_stubbed && data.asr_method === 'gemini' && (
-            <span className="absolute top-3 right-3 px-2 py-0.5 text-[10px] font-medium bg-sky-500/80 text-white rounded">
-              Gemini ASR
-            </span>
-          )}
         </div>
 
         {/* Card Body */}
         <div className="p-6 flex flex-col gap-5">
+          {/* Badges */}
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <span className={`px-2.5 py-1 text-[10px] font-black tracking-widest uppercase rounded-full ${accentClass}`}>
+              {label} · {data.platform}
+            </span>
+            <div className="flex gap-2">
+              {data.whisper_stubbed && (
+                <span className="px-2 py-0.5 text-[10px] font-medium bg-amber-500/80 text-zinc-900 rounded">
+                  Caption Fallback
+                </span>
+              )}
+              {!data.whisper_stubbed && data.asr_method === 'whisper' && (
+                <span className="px-2 py-0.5 text-[10px] font-medium bg-violet-500/80 text-white rounded">
+                  Whisper ASR
+                </span>
+              )}
+              {!data.whisper_stubbed && data.asr_method === 'gemini' && (
+                <span className="px-2 py-0.5 text-[10px] font-medium bg-sky-500/80 text-white rounded">
+                  Gemini ASR
+                </span>
+              )}
+            </div>
+          </div>
 
           {/* Title */}
           <h3 className="text-base font-bold text-white line-clamp-2 leading-snug">
