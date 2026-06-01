@@ -40,7 +40,9 @@ export default function AnalyticalHeader({ videoA, videoB }: AnalyticalHeaderPro
     );
   }
 
-  const formatNumber = (num: number) => {
+  const formatNumber = (num: number, isViews = false, platform = "") => {
+    if (num < 0) return 'Hidden';
+    if (isViews && num === 0 && platform === 'instagram') return 'Hidden';
     if (num >= 1_000_000) return (num / 1_000_000).toFixed(1) + 'M';
     if (num >= 1_000) return (num / 1_000).toFixed(1) + 'K';
     return num.toString();
@@ -56,7 +58,8 @@ export default function AnalyticalHeader({ videoA, videoB }: AnalyticalHeaderPro
   const getMetricDiff = (valA: number, valB: number) => {
     // Use explicit null checks — falsy would incorrectly suppress 0 values
     // (e.g. a video with 0 comments). Only skip when valB is 0 (div-by-zero).
-    if (valA == null || valB == null || valB === 0 || valA === valB) return null;
+    // Also skip if values are negative (e.g., -1 for hidden likes).
+    if (valA == null || valB == null || valB === 0 || valA === valB || valA < 0 || valB < 0) return null;
     const diff = valA - valB;
     const percent = (diff / valB) * 100;
     if (Math.abs(percent) < 0.01) return null;
@@ -97,7 +100,7 @@ export default function AnalyticalHeader({ videoA, videoB }: AnalyticalHeaderPro
           ) : data.thumbnail_url ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img
-              src={data.thumbnail_url}
+              src={data.platform === 'instagram' ? `${process.env.NEXT_PUBLIC_API_URL ?? 'http://127.0.0.1:8000'}/proxy-image?url=${encodeURIComponent(data.thumbnail_url)}` : data.thumbnail_url}
               alt={data.title}
               className="w-full h-full object-cover"
               onError={(e) => {
@@ -181,7 +184,7 @@ export default function AnalyticalHeader({ videoA, videoB }: AnalyticalHeaderPro
                 <Play className="w-3.5 h-3.5" /> Views
               </div>
               <div className="text-lg font-bold text-white">
-                {data.is_estimated_views ? '~' : ''}{formatNumber(metrics.views)}
+                {data.is_estimated_views ? '~' : ''}{formatNumber(metrics.views, true, data.platform)}
               </div>
               {data.is_estimated_views && <div className="text-[9px] text-zinc-500">estimated</div>}
               {otherData && (() => {

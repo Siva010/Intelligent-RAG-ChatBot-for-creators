@@ -8,6 +8,8 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from sse_starlette.sse import EventSourceResponse
+from fastapi.responses import StreamingResponse
+import httpx
 
 from app.config import settings
 from app.services.ingestion import get_ingestor_for_url
@@ -196,6 +198,26 @@ async def chat_stream(request: Request, req: ChatRequest):
     generator = stream_chat_message_sse(req.session_id, req.message)
     return EventSourceResponse(generator)
 
+@app.get("/proxy-image")
+@limiter.limit("60/minute")
+async def proxy_image(request: Request, url: str):
+    if not url.startswith("http"):
+        raise HTTPException(status_code=400, detail="Invalid URL")
+    
+    async def stream_image():
+        async with httpx.AsyncClient() as client:
+            try:
+                async with client.stream("GET", url, follow_redirects=True) as response:
+                    if response.status_code != 200:
+                        yield b""
+                        return
+                    async for chunk in response.aiter_bytes():
+                        yield chunk
+            except Exception as e:
+                logger.error(f"Failed to proxy image: {e}")
+                yield b""
+
+    return StreamingResponse(stream_image(), media_type="image/jpeg")
 
 if __name__ == "__main__":
     import uvicorn

@@ -59,12 +59,25 @@ WebSockets can be overkill and difficult to load-balance for one-way server-to-c
 
 ## 🚀 Getting Started
 
-### Prerequisites
+### 🐳 Simplest Way: Docker Compose
+If you have [Docker Desktop](https://www.docker.com/products/docker-desktop/) installed, you can run the entire stack (Redis, Backend, Celery Worker, and Frontend) with a single command. 
+
+Ensure you have created a `.env` file in the `backend/` directory first (see environment variables below), then run:
+```bash
+docker compose up --build
+```
+The app will be available at `http://localhost:3000`.
+
+---
+
+### Manual Setup (Without Docker)
+
+#### Prerequisites
 * Python 3.10+
 * Node.js 18+
 * Redis (Local or Upstash Serverless)
 
-### 1. Backend Setup
+#### 1. Backend Setup
 ```bash
 cd backend
 python -m venv venv

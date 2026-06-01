@@ -498,12 +498,27 @@ class RealMediaIngestor(BaseIngestor):
         raw_duration = info.get('duration')
         duration: int = int(raw_duration) if raw_duration is not None else 0
 
-        # Estimate views for Instagram if missing (avg like rate ~5%)
+        # Estimate views and likes for Instagram if missing or misparsed
         is_estimated_views = False
+        
+        # yt-dlp instagram bug: returns 1-5 likes based on "Liked by X and Y others" UI string.
+        if platform == "instagram" and likes < 10 and comments > 5:
+            likes = comments * 25  # Realistic ratio: 25 likes per comment
+            logger.info(f"Corrected yt-dlp likes parse bug for {video_id}: {likes} (based on comments)")
+
         if views == 0 and likes > 0:
-            views = likes * 20
+            views = likes * 20 # Realistic ratio: 5% engagement rate
             is_estimated_views = True
             logger.info(f"Estimated views for {video_id}: {views} (based on {likes} likes)")
+        elif views == 0 and comments > 0:
+            views = comments * 500
+            is_estimated_views = True
+            logger.info(f"Estimated views for {video_id}: {views} (based on comments)")
+
+        # Force fallback if yt-dlp returns 0 for all metrics on social platforms
+        if views == 0 and likes == 0 and comments == 0 and platform != "youtube":
+            logger.warning(f"yt-dlp returned 0 metrics for {url}, assuming scraping failure and forcing fallback.")
+            raise RuntimeError(f"Primary scraper returned 0 metrics for {url}.")
 
         engagement_rate = round(((likes + comments) / views) * 100, 2) if views > 0 else 0.0
 
