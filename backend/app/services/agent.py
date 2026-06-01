@@ -18,13 +18,26 @@ import redis.asyncio as redis_async
 # calls, which causes a synchronous crash. We monkey-patch the redis-py pipeline
 # executor to replace `.` with `$` when it detects a JSON.GET command.
 _original_execute_command = redis_async.client.Pipeline.execute_command
+_original_execute = redis_async.client.Pipeline.execute
 
 def _patched_execute_command(self, *args, **kwargs):
-    if args and args[0] == 'JSON.GET':
+    if not hasattr(self, '_patched_json_get_indices'):
+        self._patched_json_get_indices = set()
+    if args and args[0] == 'JSON.GET' and '.' in args:
         args = tuple('$' if a == '.' else a for a in args)
+        self._patched_json_get_indices.add(len(self.command_stack))
     return _original_execute_command(self, *args, **kwargs)
 
+async def _patched_execute(self, *args, **kwargs):
+    results = await _original_execute(self, *args, **kwargs)
+    if hasattr(self, '_patched_json_get_indices'):
+        for i in self._patched_json_get_indices:
+            if i < len(results) and isinstance(results[i], list) and len(results[i]) == 1:
+                results[i] = results[i][0]
+    return results
+
 redis_async.client.Pipeline.execute_command = _patched_execute_command
+redis_async.client.Pipeline.execute = _patched_execute
 from app.config import settings
 from app.services.vector_store import vector_store
 
