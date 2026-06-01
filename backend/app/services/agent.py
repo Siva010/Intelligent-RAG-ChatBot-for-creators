@@ -7,8 +7,8 @@ from langchain_core.messages import BaseMessage, SystemMessage, HumanMessage, AI
 from langchain_core.runnables import RunnableConfig
 from langgraph.graph import StateGraph, START, END
 from langgraph.graph.message import add_messages
-from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
-import aiosqlite
+from langgraph.checkpoint.redis.aio import AsyncRedisSaver
+import redis.asyncio as redis_async
 from app.config import settings
 from app.services.vector_store import vector_store
 
@@ -16,36 +16,32 @@ logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
-# Shared SQLite checkpoint connection
+# Shared Redis checkpoint connection
 # ---------------------------------------------------------------------------
-# A single aiosqlite connection shared across all requests within the process.
-# Opened once at app startup (via init_checkpointer) and closed at shutdown
-# (via close_checkpointer). This replaces per-request connect/close calls that
-# caused SQLite write-lock contention under concurrent requests.
-_sqlite_conn: Optional[aiosqlite.Connection] = None
-_checkpointer: Optional[AsyncSqliteSaver] = None
+_redis_conn: Optional[redis_async.Redis] = None
+_checkpointer: Optional[AsyncRedisSaver] = None
 
 
 async def init_checkpointer() -> None:
-    """Open the shared SQLite connection. Call once at application startup."""
-    global _sqlite_conn, _checkpointer
-    _sqlite_conn = await aiosqlite.connect("checkpoints.sqlite")
-    _checkpointer = AsyncSqliteSaver(_sqlite_conn)
-    await _checkpointer.setup()
-    logger.info("SQLite checkpoint connection opened (shared).")
+    """Open the shared Redis connection. Call once at application startup."""
+    global _redis_conn, _checkpointer
+    # LangGraph RedisSaver stores binary data, so decode_responses must be False
+    _redis_conn = redis_async.Redis.from_url(settings.redis_url, decode_responses=False)
+    _checkpointer = AsyncRedisSaver(redis_client=_redis_conn)
+    logger.info("Redis checkpoint connection opened (shared).")
 
 
 async def close_checkpointer() -> None:
-    """Close the shared SQLite connection. Call once at application shutdown."""
-    global _sqlite_conn, _checkpointer
-    if _sqlite_conn:
-        await _sqlite_conn.close()
-        _sqlite_conn = None
+    """Close the shared Redis connection. Call once at application shutdown."""
+    global _redis_conn, _checkpointer
+    if _redis_conn:
+        await _redis_conn.aclose()
+        _redis_conn = None
         _checkpointer = None
-        logger.info("SQLite checkpoint connection closed.")
+        logger.info("Redis checkpoint connection closed.")
 
 
-def get_checkpointer() -> AsyncSqliteSaver:
+def get_checkpointer() -> AsyncRedisSaver:
     """Return the shared checkpointer. Raises if init_checkpointer() was not called."""
     if _checkpointer is None:
         raise RuntimeError(
@@ -565,10 +561,9 @@ def stream_session_sync(
     asyncio.set_event_loop(loop)
     
     async def main_agen():
-        conn = await aiosqlite.connect("checkpoints.sqlite")
+        conn = redis_async.Redis.from_url(settings.redis_url, decode_responses=False)
         try:
-            checkpointer = AsyncSqliteSaver(conn)
-            await checkpointer.setup()
+            checkpointer = AsyncRedisSaver(redis_client=conn)
             agent_graph = workflow.compile(checkpointer=checkpointer)
 
             config: RunnableConfig = {"configurable": {"thread_id": session_id}}
@@ -642,7 +637,7 @@ def stream_session_sync(
                 "chat_history": chat_history,
             })
         finally:
-            await conn.close()
+            await conn.aclose()
 
     agen = main_agen()
     while True:

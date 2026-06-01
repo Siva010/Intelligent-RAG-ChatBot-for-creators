@@ -4,12 +4,10 @@ import React, { useState } from 'react';
 import { AlertCircle, RefreshCw, BarChart3, Sparkles } from 'lucide-react';
 import ChatConsole, { ChatMessage } from '../components/ChatConsole';
 import AnalyticalHeader, { VideoData } from '../components/AnalyticalHeader';
-import { useSession } from 'next-auth/react';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://127.0.0.1:8000';
 
 export default function Home() {
-  const { data: session } = useSession();
   const [urlA, setUrlA] = useState('');
   const [urlB, setUrlB] = useState('');
   const [sessionId, setSessionId] = useState('');
@@ -50,9 +48,9 @@ export default function Home() {
         body: JSON.stringify({
           url_a: urlA,
           url_b: urlB,
-          // Include authenticated user identity so each user gets an isolated
+          // Include anonymous user identity so each user gets an isolated
           // LangGraph thread even when comparing the same pair of videos.
-          user_id: session?.user?.email ?? 'anonymous',
+          user_id: 'anonymous',
         }),
       });
 
@@ -307,15 +305,10 @@ export default function Home() {
             <div className="flex justify-center mt-8">
               <button
                 type="submit"
-                disabled={isLoading || !session}
+                disabled={isLoading}
                 className="w-full md:w-auto h-14 px-10 rounded-full bg-gradient-to-r from-sky-400 to-cyan-500 hover:from-sky-300 hover:to-cyan-400 disabled:opacity-50 disabled:cursor-not-allowed text-sm font-black tracking-widest text-[#09111E] uppercase shadow-[0_0_30px_rgba(56,189,248,0.3)] hover:shadow-[0_0_40px_rgba(56,189,248,0.5)] flex items-center justify-center gap-3 transition-all hover:-translate-y-0.5 active:translate-y-0"
               >
-                {!session ? (
-                  <>
-                    <AlertCircle className="w-4 h-4" />
-                    Sign In to Analyze
-                  </>
-                ) : isLoading ? (
+                {isLoading ? (
                   <>
                     <RefreshCw className="w-4 h-4 animate-spin" />
                     {loadingStep}

@@ -1,8 +1,6 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
-import AuthProvider from "@/components/AuthProvider";
-import AuthStatus from "@/components/AuthStatus";
 import BackendStatus from "@/components/BackendStatus";
 
 const geistSans = Geist({
@@ -42,7 +40,6 @@ export default function RootLayout({
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col bg-[#09111E] relative overflow-x-hidden text-zinc-100">
-        <AuthProvider>
         {/* Ambient background glows & noise */}
         <div className="absolute inset-0 bg-noise pointer-events-none mix-blend-overlay opacity-50 z-0" />
         <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] rounded-full bg-cyan-600/5 blur-[120px] mix-blend-screen pointer-events-none animate-blob z-0" />
@@ -73,8 +70,6 @@ export default function RootLayout({
               <div className="flex items-center gap-4 text-xs text-zinc-500">
                 <BackendStatus />
                 <span className="font-mono hidden sm:inline-block">v0.1.0-beta</span>
-                <div className="h-4 w-px bg-white/10 mx-2 hidden sm:block"></div>
-                <AuthStatus />
               </div>
             </div>
           </div>
@@ -83,7 +78,6 @@ export default function RootLayout({
         <main className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 lg:p-8 relative z-10">
           {children}
         </main>
-        </AuthProvider>
       </body>
     </html>
   );
