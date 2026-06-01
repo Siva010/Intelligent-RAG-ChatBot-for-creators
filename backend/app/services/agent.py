@@ -686,15 +686,21 @@ async def stream_chat_message_sse(session_id: str, message: str):
                     yield dict(data=json.dumps({"chunk": chunk_content}))
 
         if not emitted_any:
-            # If no stream events fired (e.g. mock fallback was used), yield the final state's message
+            # If no stream events fired, yield the final state's message
             final_state = await agent_graph.aget_state(config)
             if final_state and final_state.values and final_state.values.get("messages"):
                 last_msg = final_state.values["messages"][-1]
-                if last_msg.type == "ai" and getattr(last_msg, "content", ""):
-                    yield dict(data=json.dumps({"chunk": last_msg.content}))
+                content = getattr(last_msg, "content", "")
+                if last_msg.type == "ai" and content:
+                    yield dict(data=json.dumps({"chunk": content}))
+                else:
+                    yield dict(data=json.dumps({"chunk": "**Error:** The AI generated an empty response. It might have been blocked by safety filters or an internal graph error occurred."}))
+            else:
+                yield dict(data=json.dumps({"chunk": "**Error:** The agent graph did not return a valid state."}))
 
     except Exception as e:
-        logger.error(f"Error in stream_chat_message_sse: {e}")
-        yield dict(data=json.dumps({"chunk": f"**Error:** {str(e)} "}))
+        import traceback
+        logger.error(f"Error in stream_chat_message_sse: {traceback.format_exc()}")
+        yield dict(data=json.dumps({"chunk": f"**Error:** {str(e)}"}))
 
     yield dict(data="[DONE]")
