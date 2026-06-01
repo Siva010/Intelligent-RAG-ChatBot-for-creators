@@ -1,8 +1,9 @@
-FROM node:18-alpine
+FROM node:20-slim
 
 WORKDIR /app
 
-COPY package*.json ./
+# Copy only package.json to force re-resolving optional dependencies for Linux
+COPY package.json ./
 RUN npm install
 
 COPY . .
