@@ -605,7 +605,7 @@ def stream_session_sync(
                         hook_analysis += token
                         yield ("hook_chunk", token)
 
-            final_state = initial_state.copy()
+            final_state: Dict[str, Any] = dict(initial_state)
             final_state["hook_analysis"] = hook_analysis
             
             # Manually append the hook audit as an AI message so it's persisted in the chat history
