@@ -31,7 +31,7 @@
 | **1. Paste two URLs** | YouTube, Instagram Reels, or TikTok |
 | **2. Background analysis** | Celery worker scrapes metadata + transcripts (parallel), chunks and embeds text, runs an initial hook audit |
 | **3. Dashboard** | Side-by-side cards: views, likes, engagement rate, embedded preview, ASR/caption source |
-| **4. RAG chat** | Ask about hooks, pacing, CTAs — model retrieves semantic chunks from both videos and cites timestamps |
+| **4. RAG chat** | Ask about hooks, pacing, model retrieves semantic chunks from both videos and cites timestamps |
 | **5. Resilience** | Redis-backed session memory, rate-limit aware retries |
 
 Small detail: The nav bar includes a live **backend health** indicator (green if backend is online, red otherwise).
