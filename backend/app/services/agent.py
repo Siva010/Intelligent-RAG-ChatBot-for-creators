@@ -8,7 +8,7 @@ from langchain_core.runnables import RunnableConfig
 from langgraph.graph import StateGraph, START, END
 from langgraph.graph.message import add_messages
 import redis.asyncio as redis_async
-from app.config import settings
+from app.config import settings, redis_ssl_connection_kwargs
 from app.services.vector_store import vector_store
 
 logger = logging.getLogger(__name__)
@@ -21,7 +21,11 @@ _redis_conn: Optional[redis_async.Redis] = None
 async def init_checkpointer() -> None:
     """Open the shared Redis connection. Call once at application startup."""
     global _redis_conn
-    _redis_conn = redis_async.Redis.from_url(settings.redis_url, decode_responses=True)
+    _redis_conn = redis_async.Redis.from_url(
+        settings.redis_url,
+        decode_responses=True,
+        **redis_ssl_connection_kwargs(settings.redis_url),
+    )
     logger.info("Redis connection opened for manual session state.")
 
 async def close_checkpointer() -> None:
@@ -40,20 +44,24 @@ async def save_session(session_id: str, state: Dict[str, Any]) -> None:
         state_to_save["messages"] = messages_to_dict(state_to_save["messages"])
     await _redis_conn.set(f"creatorjoy:session:{session_id}", json.dumps(state_to_save), ex=86400)
 
+def _parse_session_json(data_str: str) -> Optional[Dict[str, Any]]:
+    try:
+        state = json.loads(data_str)
+        if "messages" in state:
+            state["messages"] = messages_from_dict(state["messages"])
+        return state
+    except (json.JSONDecodeError, TypeError, KeyError, ValueError) as e:
+        logger.warning(f"Invalid session payload: {e}")
+        return None
+
+
 async def load_session(session_id: str) -> Optional[Dict[str, Any]]:
     if not _redis_conn:
         return None
     data_str = await _redis_conn.get(f"creatorjoy:session:{session_id}")
     if not data_str:
         return None
-    try:
-        state = json.loads(data_str)
-        if "messages" in state:
-            state["messages"] = messages_from_dict(state["messages"])
-        return state
-    except Exception as e:
-        logger.error(f"Failed to load session: {e}")
-        return None
+    return _parse_session_json(data_str)
 
 
 
@@ -522,11 +530,17 @@ async def astream_session(
     if not emitted_any and final_graph_state and final_graph_state.get("hook_analysis"):
         hook_analysis = final_graph_state.get("hook_analysis", "")
 
+    is_mock = (
+        bool(final_graph_state.get("is_mock_analysis"))
+        if final_graph_state
+        else False
+    )
+
     final_state: Dict[str, Any] = dict(initial_state)
     final_state["hook_analysis"] = hook_analysis
-    
+    final_state["is_mock_analysis"] = is_mock
+
     new_messages: List[BaseMessage] = list(initial_state["messages"])
-    from langchain_core.messages import AIMessage
     new_messages.append(AIMessage(content=f"### Initial Hook Audit & Diagnostics\n\n{hook_analysis}"))
     final_state["messages"] = new_messages
 
@@ -537,7 +551,7 @@ async def astream_session(
 
     yield ("done", {
         "hook_analysis": hook_analysis,
-        "is_mock_analysis": False,
+        "is_mock_analysis": is_mock,
         "chat_history": [],
     })
 
@@ -550,20 +564,17 @@ def stream_session_sync(
     
     async def main_agen():
         # Make a temporary connection for sync execution since _redis_conn is bound to Uvicorn loop
-        temp_conn = redis_async.Redis.from_url(settings.redis_url, decode_responses=True)
+        temp_conn = redis_async.Redis.from_url(
+            settings.redis_url,
+            decode_responses=True,
+            **redis_ssl_connection_kwargs(settings.redis_url),
+        )
         try:
             agent_graph = workflow.compile()
             config: RunnableConfig = {"configurable": {"thread_id": session_id}}
 
             data_str = await temp_conn.get(f"creatorjoy:session:{session_id}")
-            state_info = None
-            if data_str:
-                try:
-                    state_info = json.loads(data_str)
-                    if "messages" in state_info:
-                        state_info["messages"] = messages_from_dict(state_info["messages"])
-                except:
-                    pass
+            state_info = _parse_session_json(data_str) if data_str else None
 
             if state_info and state_info.get("hook_analysis"):
                 logger.info(f"Session {session_id} already exists. Returning cached chat history.")
@@ -617,12 +628,17 @@ def stream_session_sync(
             if not emitted_any and final_graph_state and final_graph_state.get("hook_analysis"):
                 hook_analysis = final_graph_state.get("hook_analysis", "")
 
+            is_mock = (
+                bool(final_graph_state.get("is_mock_analysis"))
+                if final_graph_state
+                else False
+            )
+
             final_state: Dict[str, Any] = dict(initial_state)
             final_state["hook_analysis"] = hook_analysis
-            
-            # Manually append the hook audit as an AI message so it's persisted in the chat history
+            final_state["is_mock_analysis"] = is_mock
+
             new_messages: List[BaseMessage] = list(initial_state["messages"])
-            from langchain_core.messages import AIMessage
             new_messages.append(AIMessage(content=f"### Initial Hook Audit & Diagnostics\n\n{hook_analysis}"))
             final_state["messages"] = new_messages
 
@@ -635,7 +651,7 @@ def stream_session_sync(
 
             yield ("done", {
                 "hook_analysis": hook_analysis,
-                "is_mock_analysis": False,
+                "is_mock_analysis": is_mock,
                 "chat_history": [],
             })
         except Exception as e:
@@ -675,7 +691,7 @@ async def stream_chat_message_sse(session_id: str, message: str):
 
         emitted_any = False
         ai_reply = ""
-        
+
         async for event in agent_graph.astream_events(state_info, config=config, version="v2"):
             kind = event["event"]
             if kind == "on_chat_model_stream":
@@ -684,9 +700,18 @@ async def stream_chat_message_sse(session_id: str, message: str):
                     emitted_any = True
                     ai_reply += chunk_content
                     yield dict(data=json.dumps({"chunk": chunk_content}))
+            elif kind == "on_chain_end":
+                output = event.get("data", {}).get("output")
+                if not emitted_any and isinstance(output, dict):
+                    for msg in output.get("messages", []):
+                        if isinstance(msg, AIMessage):
+                            content = extract_text(msg.content)
+                            if content:
+                                emitted_any = True
+                                ai_reply = content
+                                yield dict(data=json.dumps({"chunk": content}))
 
         if not emitted_any:
-            # Check if there is a mock fallback or internal error
             ai_reply = "**Error:** The AI generated an empty response. It might have been blocked by safety filters."
             yield dict(data=json.dumps({"chunk": ai_reply}))
 

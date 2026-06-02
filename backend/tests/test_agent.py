@@ -252,16 +252,30 @@ class TestGenerateMockChatResponse:
 # astream_session — streaming init flow (LLM mocked)
 # ---------------------------------------------------------------------------
 
+@pytest.fixture
+def session_store():
+    return {}
+
+
+@pytest.fixture(autouse=True)
+def mock_redis_sessions(session_store):
+    """In-memory Redis session store for agent streaming tests."""
+    import copy
+
+    async def mock_save(session_id: str, state):
+        session_store[session_id] = copy.deepcopy(state)
+
+    async def mock_load(session_id: str):
+        state = session_store.get(session_id)
+        return copy.deepcopy(state) if state else None
+
+    with patch("app.services.agent.save_session", mock_save), patch(
+        "app.services.agent.load_session", mock_load
+    ):
+        yield session_store
+
+
 class TestAstreamSession:
-    @pytest.fixture(autouse=True)
-    def reset_agent_graph(self):
-        """Each test gets a fresh MemorySaver so sessions don't bleed."""
-        from langgraph.checkpoint.memory import MemorySaver
-        from app.services import agent as agent_module
-        old_memory = agent_module._checkpointer
-        agent_module._checkpointer = MemorySaver()  # type: ignore
-        yield
-        agent_module._checkpointer = old_memory
 
     @pytest.mark.asyncio
     async def test_streams_header_chunk_first(self):
@@ -339,20 +353,11 @@ class TestAstreamSession:
 
 class TestStreamChatMessageSse:
     @pytest.fixture(autouse=True)
-    def fresh_session(self):
-        """Initialize a session so chat tests have a valid state to operate on."""
-        from langgraph.checkpoint.memory import MemorySaver
-        from app.services import agent as agent_module
+    def seed_chat_session(self, session_store):
+        """Pre-seed Redis session state so chat tests have a valid session."""
         from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
 
-        agent_module._checkpointer = MemorySaver()  # type: ignore
-        agent_graph = agent_module.workflow.compile(
-            checkpointer=agent_module._checkpointer
-        )
-
-        # Pre-seed the graph state so chat won't 404
-        config = {"configurable": {"thread_id": "chat_session"}}
-        initial_state = {
+        session_store["chat_session"] = {
             "messages": [
                 SystemMessage(content="system prompt"),
                 HumanMessage(content="Start Comparative Analysis Audit"),
@@ -364,8 +369,6 @@ class TestStreamChatMessageSse:
             "is_mock_analysis": True,
             "session_id": "chat_session",
         }
-        # Directly update state (no LLM call needed)
-        agent_graph.update_state(config, initial_state)
         yield
 
     @pytest.mark.asyncio

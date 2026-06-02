@@ -2,7 +2,7 @@ import json
 import logging
 from typing import Dict, Any, Optional
 import redis
-from app.config import settings
+from app.config import settings, redis_ssl_connection_kwargs
 
 logger = logging.getLogger(__name__)
 
@@ -17,7 +17,11 @@ class RedisCache:
     def _ensure_connected(self):
         if not self.is_connected:
             try:
-                self.client = redis.Redis.from_url(self.redis_url, decode_responses=True)
+                self.client = redis.Redis.from_url(
+                    self.redis_url,
+                    decode_responses=True,
+                    **redis_ssl_connection_kwargs(self.redis_url),
+                )
                 # Test connection
                 self.client.ping()
                 self.is_connected = True

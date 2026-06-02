@@ -1,7 +1,8 @@
 import os
+import ssl
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from dotenv import load_dotenv
-from typing import List
+from typing import Any, Dict, List
 
 # Load .env file explicitly
 load_dotenv()
@@ -33,5 +34,20 @@ class Settings(BaseSettings):
         env_file_encoding="utf-8",
         extra="ignore"
     )
+
+def normalized_redis_url_for_celery(url: str) -> str:
+    """Celery/kombu require ssl_cert_reqs as a URL query param for rediss:// brokers."""
+    if url.startswith("rediss://") and "ssl_cert_reqs" not in url:
+        delimiter = "&" if "?" in url else "?"
+        return f"{url}{delimiter}ssl_cert_reqs=CERT_NONE"
+    return url
+
+
+def redis_ssl_connection_kwargs(url: str) -> Dict[str, Any]:
+    """redis-py / redis.asyncio kwargs for Upstash-style TLS (do not put CERT_NONE in the URL)."""
+    if url.startswith("rediss://"):
+        return {"ssl_cert_reqs": ssl.CERT_NONE}
+    return {}
+
 
 settings = Settings()

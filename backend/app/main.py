@@ -11,12 +11,12 @@ from sse_starlette.sse import EventSourceResponse
 from fastapi.responses import StreamingResponse
 import httpx
 
-from app.config import settings
+from app.config import settings, redis_ssl_connection_kwargs
 from app.services.ingestion import get_ingestor_for_url
 from app.services.cache import video_cache
 from app.services.vector_store import vector_store
 from app.services.agent import astream_session, stream_chat_message_sse, init_checkpointer, close_checkpointer
-from app.worker import analyze_task, celery_app
+from app.worker import analyze_task
 import uuid
 import redis.asyncio as redis_async
 
@@ -35,15 +35,16 @@ _redis_pool: Optional[redis_async.ConnectionPool] = None
 async def lifespan(app: FastAPI):
     """Manage shared resources across the process lifetime."""
     global _redis_pool
-    # Open the shared SQLite checkpoint connection once at startup.
     await init_checkpointer()
     # Create the Redis connection pool. Borrowing from a pool avoids creating
     # a new TCP connection for every SSE stream request.
     _redis_pool = redis_async.ConnectionPool.from_url(
-        settings.redis_url, decode_responses=True, max_connections=20
+        settings.redis_url,
+        decode_responses=True,
+        max_connections=20,
+        **redis_ssl_connection_kwargs(settings.redis_url),
     )
     yield
-    # Graceful shutdown: close SQLite then drain the Redis pool.
     await close_checkpointer()
     await _redis_pool.aclose()
     logger.info("Redis connection pool closed.")
@@ -181,10 +182,12 @@ async def analyze_stream(task_id: str, request: Request):
             # Release connection back to the pool (does not close the underlying socket).
             await r.aclose()
             
-            # If the loop exited early (e.g. client disconnect), cancel the Celery task
+            # Let the worker finish even if the client disconnects — events stay in Redis
+            # for replay and long ingest jobs are not killed by flaky mobile/proxy timeouts.
             if not completed:
-                logger.info(f"Revoking Celery task {task_id} due to stream disconnect")
-                celery_app.control.revoke(task_id, terminate=True, signal="SIGTERM")
+                logger.info(
+                    f"Client left task {task_id} stream early; Celery job continues in background"
+                )
 
     return EventSourceResponse(_redis_stream_generator())
 
