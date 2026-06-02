@@ -19,7 +19,7 @@
 
 > Open the link above, paste two public video URLs, and run a comparison. The full stack also runs locally with Docker - follow [Getting started](#getting-started).
 
-** walkthrough of how it works: **
+**walkthrough of how it works:**
 
 1. Paste a **control** YouTube URL and a **competitor** URL (Instagram Reels and TikTok works too).
 2. Click **Perform Diagnostic Comparison** and watch progress stream in (scraping → indexing → hook audit).
@@ -78,7 +78,7 @@ flowchart LR
 **Design choices worth calling out:**
 
 - **Event-driven ingest** — `POST /analyze` returns immediately; progress streams over SSE via Redis Pub/Sub, with events replayed from a Redis list if the client reconnects.
-- **LangGraph, not a single prompt** — Separate nodes for system context, hook audit, and conversational RAG; session state persisted in Redis (24h TTL).
+- **LangGraph, not a single prompt** — Separate nodes for system context, hook audit, and conversational RAG; session state persisted in Redis (1h TTL).
 - **Tiered vector stack** — Pinecone when configured → local ChromaDB → in-memory keyword fallback so CI and local dev never hard-crash.
 - **Tiered embeddings** — Google (Free-tier) `gemini-embedding-001` → (no openai-key in the hosted site) OpenAI `text-embedding-3-small` & deterministic mock vectors when no API keys are set.
 - **Production-minded API** — CORS allowlist, SlowAPI rate limits, shared Redis connection pool for SSE.
