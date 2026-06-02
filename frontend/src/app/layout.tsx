@@ -61,7 +61,7 @@ export default function RootLayout({
                 </svg>
                 <div>
                   <span className="text-white font-black text-xl tracking-wide">
-                    CJ<span className="text-[#00B2FF]">.COM</span>
+                    Intelligent-RAG-ChatBot<span className="text-[#00B2FF]">.COM</span>
                   </span>
                   <p className="text-[10px] text-zinc-500 font-bold uppercase tracking-widest leading-none">
                     Viral Social Content RAG Chatbot
