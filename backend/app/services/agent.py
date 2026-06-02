@@ -516,8 +516,8 @@ async def astream_session(
                 emitted_any = True
                 hook_analysis += token
                 yield ("hook_chunk", token)
-        elif kind == "on_chain_end" and event.get("name") == "LangGraph":
-            final_graph_state = event["data"].get("output")
+        elif kind == "on_chain_end" and event.get("data") and event["data"].get("output") and isinstance(event["data"]["output"], dict) and "hook_analysis" in event["data"]["output"]:
+            final_graph_state = event["data"]["output"]
 
     if not emitted_any and final_graph_state and final_graph_state.get("hook_analysis"):
         hook_analysis = final_graph_state.get("hook_analysis", "")
@@ -611,8 +611,8 @@ def stream_session_sync(
                         emitted_any = True
                         hook_analysis += token
                         yield ("hook_chunk", token)
-                elif kind == "on_chain_end" and event.get("name") == "LangGraph":
-                    final_graph_state = event["data"].get("output")
+                elif kind == "on_chain_end" and event.get("data") and event["data"].get("output") and isinstance(event["data"]["output"], dict) and "hook_analysis" in event["data"]["output"]:
+                    final_graph_state = event["data"]["output"]
                     
             if not emitted_any and final_graph_state and final_graph_state.get("hook_analysis"):
                 hook_analysis = final_graph_state.get("hook_analysis", "")
