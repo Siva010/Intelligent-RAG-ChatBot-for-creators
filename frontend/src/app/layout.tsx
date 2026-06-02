@@ -14,17 +14,18 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "CreatorJoy Replica | AI Video Hook Analyzer",
+  title: "Intelligent RAG ChatBot",
   description:
     "Paste two social video URLs (YouTube, Instagram Reels, TikTok) and get an AI-powered hook comparison, engagement metrics, and RAG-powered chat analysis.",
+  applicationName: "Intelligent RAG ChatBot",
   openGraph: {
-    title: "CreatorJoy Replica | AI Video Hook Analyzer",
+    title: "Intelligent RAG ChatBot",
     description: "AI-powered hook comparison, engagement metrics, and RAG-powered chat analysis.",
     type: "website",
   },
   twitter: {
     card: "summary_large_image",
-    title: "CreatorJoy Replica",
+    title: "Intelligent RAG ChatBot",
     description: "Audit Social Video Performance.",
   },
 };
