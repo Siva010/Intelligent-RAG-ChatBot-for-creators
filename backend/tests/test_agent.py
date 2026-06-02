@@ -406,3 +406,30 @@ class TestStreamChatMessageSse:
         # Every non-DONE event must have a "chunk" key
         for e in chunk_events:
             assert "chunk" in e
+
+    @pytest.mark.asyncio
+    async def test_greeting_does_not_repeat_hook_audit(self, session_store):
+        from langchain_core.messages import AIMessage
+
+        session_store["chat_session"]["messages"] = [
+            *session_store["chat_session"]["messages"],
+            AIMessage(
+                content=(
+                    "### Initial Hook Audit & Diagnostics\n\n"
+                    "1. Psychological Curiosity Loop\nVideo A opened with supply-chain..."
+                )
+            ),
+        ]
+        with patch("app.services.agent._astream_llm_with_retry", new_callable=AsyncMock) as mock_llm:
+            mock_llm.return_value = AIMessage(content="Hi! What would you like to compare about these two videos?")
+            from app.services.agent import stream_chat_message_sse
+
+            chunks = []
+            async for event in stream_chat_message_sse("chat_session", "hi"):
+                if event["data"] != "[DONE]":
+                    chunks.append(json.loads(event["data"])["chunk"])
+
+        reply = "".join(chunks)
+        assert "Psychological Curiosity Loop" not in reply
+        assert "Initial Hook Audit" not in reply
+        assert "supply-chain" not in reply

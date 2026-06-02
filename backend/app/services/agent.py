@@ -82,6 +82,53 @@ def _seconds_to_mmss(seconds: float) -> str:
     return f"{total // 60:02d}:{total % 60:02d}"
 
 
+_INIT_AUDIT_HUMAN = "Start Comparative Analysis Audit"
+_HOOK_AUDIT_PREFIX = "### Initial Hook Audit & Diagnostics"
+_CONVERSATIONAL_QUERIES = frozenset(
+    {"hi", "hello", "hey", "yo", "thanks", "thank you", "thx", "ok", "okay", "sup"}
+)
+
+
+def _is_chat_assistant_chain_end(event: dict) -> bool:
+    """Only accept chain-end from the chat node (graph-level ends include full message history)."""
+    name = event.get("name") or (event.get("metadata") or {}).get("langgraph_node") or ""
+    return name == "chat_assistant" or str(name).startswith("chat_assistant")
+
+
+def _is_chat_assistant_stream(event: dict) -> bool:
+    meta = event.get("metadata") or {}
+    node = meta.get("langgraph_node") or ""
+    if not node:
+        return True
+    return node == "chat_assistant" or str(node).startswith("chat_assistant")
+
+
+def _is_hook_audit_message(msg: BaseMessage) -> bool:
+    if not isinstance(msg, AIMessage):
+        return False
+    text = extract_text(msg.content)
+    return text.startswith(_HOOK_AUDIT_PREFIX) or text.startswith("### Hook Audit")
+
+
+def _conversation_messages_for_llm(messages: Sequence[BaseMessage]) -> List[BaseMessage]:
+    """User/assistant turns only — hook audit lives in hook_analysis, not chat history."""
+    turns: List[BaseMessage] = []
+    for m in messages:
+        if isinstance(m, SystemMessage):
+            continue
+        if isinstance(m, HumanMessage) and extract_text(m.content).strip() == _INIT_AUDIT_HUMAN:
+            continue
+        if _is_hook_audit_message(m):
+            continue
+        turns.append(m)
+    return turns
+
+
+def _is_conversational_query(query: str) -> bool:
+    q = query.strip().lower().rstrip("!?. ")
+    return q in _CONVERSATIONAL_QUERIES or len(q) <= 3
+
+
 def _get_llm(temperature: float = 0.15):
     """Returns a configured Gemini LLM instance."""
     from langchain_google_genai import ChatGoogleGenerativeAI
@@ -347,15 +394,37 @@ async def chat_assistant_node(state: AgentState, config: RunnableConfig) -> Dict
         return {"messages": [AIMessage(content="No query found in the current session state. Please try sending your message again.")]}
     user_msg = human_msgs[-1]
     query = extract_text(user_msg.content)
+    conversational = _is_conversational_query(query)
 
-    # Step 1: Retrieve semantically relevant transcript chunks (blocking call in thread)
-    retrieved_context = await asyncio.to_thread(retrieve_relevant_segments, query, state, 6)
+    # Step 1: Retrieve transcript chunks (skip for greetings / small talk)
+    if conversational:
+        retrieved_context = "_(No transcript lookup — brief conversational message.)_"
+    else:
+        retrieved_context = await asyncio.to_thread(retrieve_relevant_segments, query, state, 6)
 
     # Step 2: Build enriched system prompt with retrieved context injected
     system_msgs = [m for m in messages if isinstance(m, SystemMessage)]
     base_system_content = extract_text(system_msgs[0].content) if system_msgs else format_system_prompt(
         state["video_a"], state["video_b"]
     )
+
+    if conversational:
+        response_rules = """
+## RESPONSE FORMAT
+- Reply in 1–2 friendly sentences.
+- Do NOT repeat the Initial Hook Audit, prior answers, or section headers from earlier turns.
+- Invite the user to ask a specific comparison or transcript question.
+"""
+    else:
+        response_rules = """
+## RESPONSE FORMAT
+- Lead with the direct answer to the question.
+- Support with specific quotes and timestamps from the segments above.
+- Use **bold** for key terms and metrics.
+- Bullet points for lists; short paragraphs (1–3 sentences) for prose.
+- Do NOT repeat the Initial Hook Audit unless the user explicitly asks for it.
+- End with one concrete, actionable takeaway for the creator.
+"""
 
     enriched_system = f"""{base_system_content}
 
@@ -368,21 +437,12 @@ These are your **only** source of truth for transcript content. Do not quote any
 Always cite using the exact format shown (e.g., `[Video A @ 01:24]`).
 
 {retrieved_context}
-
----
-
-## RESPONSE FORMAT
-- Lead with the direct answer to the question.
-- Support with specific quotes and timestamps from the segments above.
-- Use **bold** for key terms and metrics.
-- Bullet points for lists; short paragraphs (1–3 sentences) for prose.
-- End with one concrete, actionable takeaway for the creator.
+{response_rules}
 """
 
-    # Step 3: Assemble full message history (skip old system, use enriched one)
+    # Step 3: Prior Q&A turns only (hook audit is stored separately in hook_analysis)
     llm_messages: List[BaseMessage] = [SystemMessage(content=enriched_system)]
-    for m in messages[1:]:  # Skip the original system message at index 0
-        llm_messages.append(m)
+    llm_messages.extend(_conversation_messages_for_llm(messages))
 
     # Step 4: Call LLM
     reply_msg = await _astream_llm_with_retry(llm_messages, config, temperature=0.15)
@@ -695,21 +755,25 @@ async def stream_chat_message_sse(session_id: str, message: str):
         async for event in agent_graph.astream_events(state_info, config=config, version="v2"):
             kind = event["event"]
             if kind == "on_chat_model_stream":
+                if not _is_chat_assistant_stream(event):
+                    continue
                 chunk_content = event["data"]["chunk"].content
                 if chunk_content and isinstance(chunk_content, str):
                     emitted_any = True
                     ai_reply += chunk_content
                     yield dict(data=json.dumps({"chunk": chunk_content}))
             elif kind == "on_chain_end":
+                if not _is_chat_assistant_chain_end(event):
+                    continue
                 output = event.get("data", {}).get("output")
                 if not emitted_any and isinstance(output, dict):
-                    for msg in output.get("messages", []):
-                        if isinstance(msg, AIMessage):
-                            content = extract_text(msg.content)
-                            if content:
-                                emitted_any = True
-                                ai_reply = content
-                                yield dict(data=json.dumps({"chunk": content}))
+                    new_ai = [m for m in output.get("messages", []) if isinstance(m, AIMessage)]
+                    if new_ai:
+                        content = extract_text(new_ai[-1].content)
+                        if content:
+                            emitted_any = True
+                            ai_reply = content
+                            yield dict(data=json.dumps({"chunk": content}))
 
         if not emitted_any:
             ai_reply = "**Error:** The AI generated an empty response. It might have been blocked by safety filters."
