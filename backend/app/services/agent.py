@@ -516,7 +516,7 @@ async def astream_session(
                 hook_analysis += token
                 yield ("hook_chunk", token)
 
-    final_state = initial_state.copy()
+    final_state: Dict[str, Any] = dict(initial_state)
     final_state["hook_analysis"] = hook_analysis
     
     new_messages: List[BaseMessage] = list(initial_state["messages"])
@@ -609,7 +609,7 @@ def stream_session_sync(
             final_state["hook_analysis"] = hook_analysis
             
             # Manually append the hook audit as an AI message so it's persisted in the chat history
-            new_messages = list(initial_state["messages"])
+            new_messages: List[BaseMessage] = list(initial_state["messages"])
             from langchain_core.messages import AIMessage
             new_messages.append(AIMessage(content=f"### Initial Hook Audit & Diagnostics\n\n{hook_analysis}"))
             final_state["messages"] = new_messages
