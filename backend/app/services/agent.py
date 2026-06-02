@@ -314,8 +314,10 @@ async def _astream_llm_with_retry(
             logger.warning(f"LLM streaming attempt {attempt + 1}/{max_attempts} failed: {e}")
             if "429" in err_str and attempt < max_attempts - 1:
                 delay_match = _re.search(r"retryDelay.*?'(\d+)s'", err_str)
-                wait = int(delay_match.group(1)) if delay_match else 55
-                wait = min(wait, 65)
+                wait = int(delay_match.group(1)) if delay_match else 15
+                if wait > 15:
+                    logger.info(f"Rate limit delay {wait}s is too long. Failing fast to trigger fallback.")
+                    return None
                 logger.info(f"Rate limited — waiting {wait}s before retry...")
                 await asyncio.sleep(wait)
             else:
@@ -475,6 +477,8 @@ async def astream_session(
         chat_history = []
         for m in state_info.get("messages", []):
             if m.type in ("human", "ai"):
+                if m.type == "human" and extract_text(m.content) == "Start Comparative Analysis Audit":
+                    continue
                 chat_history.append({
                     "role": "user" if m.type == "human" else "assistant",
                     "content": extract_text(m.content),
@@ -514,6 +518,12 @@ async def astream_session(
 
     final_state = initial_state.copy()
     final_state["hook_analysis"] = hook_analysis
+    
+    new_messages: List[BaseMessage] = list(initial_state["messages"])
+    from langchain_core.messages import AIMessage
+    new_messages.append(AIMessage(content=f"### Initial Hook Audit & Diagnostics\n\n{hook_analysis}"))
+    final_state["messages"] = new_messages
+
     await save_session(session_id, final_state)
 
     if not emitted_any and hook_analysis:
@@ -556,6 +566,8 @@ def stream_session_sync(
                 chat_history = []
                 for m in state_info.get("messages", []):
                     if m.type in ("human", "ai"):
+                        if m.type == "human" and extract_text(m.content) == "Start Comparative Analysis Audit":
+                            continue
                         chat_history.append({
                             "role": "user" if m.type == "human" else "assistant",
                             "content": extract_text(m.content),
@@ -595,6 +607,13 @@ def stream_session_sync(
 
             final_state = initial_state.copy()
             final_state["hook_analysis"] = hook_analysis
+            
+            # Manually append the hook audit as an AI message so it's persisted in the chat history
+            new_messages = list(initial_state["messages"])
+            from langchain_core.messages import AIMessage
+            new_messages.append(AIMessage(content=f"### Initial Hook Audit & Diagnostics\n\n{hook_analysis}"))
+            final_state["messages"] = new_messages
+
             state_to_save: Dict[str, Any] = dict(final_state)
             state_to_save["messages"] = messages_to_dict(state_to_save["messages"])
             await temp_conn.set(f"creatorjoy:session:{session_id}", json.dumps(state_to_save), ex=86400)
