@@ -507,6 +507,7 @@ async def astream_session(
 
     emitted_any = False
     hook_analysis = ""
+    final_graph_state = None
     async for event in agent_graph.astream_events(initial_state, config=config, version="v2"):
         kind = event["event"]
         if kind == "on_chat_model_stream":
@@ -515,6 +516,11 @@ async def astream_session(
                 emitted_any = True
                 hook_analysis += token
                 yield ("hook_chunk", token)
+        elif kind == "on_chain_end" and event.get("name") == "LangGraph":
+            final_graph_state = event["data"].get("output")
+
+    if not emitted_any and final_graph_state and final_graph_state.get("hook_analysis"):
+        hook_analysis = final_graph_state.get("hook_analysis", "")
 
     final_state: Dict[str, Any] = dict(initial_state)
     final_state["hook_analysis"] = hook_analysis
@@ -596,6 +602,7 @@ def stream_session_sync(
 
             emitted_any = False
             hook_analysis = ""
+            final_graph_state = None
             async for event in agent_graph.astream_events(initial_state, config=config, version="v2"):
                 kind = event["event"]
                 if kind == "on_chat_model_stream":
@@ -604,6 +611,11 @@ def stream_session_sync(
                         emitted_any = True
                         hook_analysis += token
                         yield ("hook_chunk", token)
+                elif kind == "on_chain_end" and event.get("name") == "LangGraph":
+                    final_graph_state = event["data"].get("output")
+                    
+            if not emitted_any and final_graph_state and final_graph_state.get("hook_analysis"):
+                hook_analysis = final_graph_state.get("hook_analysis", "")
 
             final_state: Dict[str, Any] = dict(initial_state)
             final_state["hook_analysis"] = hook_analysis
