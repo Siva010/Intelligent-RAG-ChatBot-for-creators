@@ -4,9 +4,7 @@
 [![Tests](https://img.shields.io/badge/Tests-106_passing-success)](backend/tests)
 [![Stack](https://img.shields.io/badge/Stack-FastAPI_·_Next.js_·_Celery_·_LangGraph-indigo)](https://github.com/Siva010/Intelligent-RAG-ChatBot-for-creators)
 
-**Compare two social videos side by side — transcripts, engagement metrics, and a grounded AI coach that cites what it actually read.**
-
-Built as a portfolio piece: real async workers, retrieval-augmented chat, and the kind of failure handling you want before shipping to paying creators.
+**Compare two social-media videos (Youtube, Instagram Reels) side by side. Works with transcripts, engagement metrics, and a grounded ai chatbot that cites what it actually references.**
 
 ---
 
@@ -19,37 +17,24 @@ Built as a portfolio piece: real async workers, retrieval-augmented chat, and th
 | **Try the app** | **[https://intelligent-chatbot-rag.up.railway.app/](https://intelligent-chatbot-rag.up.railway.app/)** |
 | **Source** | [github.com/Siva010/Intelligent-RAG-ChatBot-for-creators](https://github.com/Siva010/Intelligent-RAG-ChatBot-for-creators) |
 
-> **For reviewers:** Open the link above, paste two public video URLs, and run a comparison. The full stack also runs locally with Docker — see [Getting started](#getting-started).
+> Open the link above, paste two public video URLs, and run a comparison. The full stack also runs locally with Docker - follow [Getting started](#getting-started).
 
-**Suggested walkthrough (2 minutes):**
+** walkthrough of how it works: **
 
-1. Paste a **control** YouTube URL and a **competitor** URL (Instagram Reels and TikTok work too).
+1. Paste a **control** YouTube URL and a **competitor** URL (Instagram Reels and TikTok works too).
 2. Click **Perform Diagnostic Comparison** and watch progress stream in (scraping → indexing → hook audit).
-3. Ask the chatbot something specific, e.g. *“Which video’s hook creates a stronger curiosity loop?”* — answers should cite `[Video A @ MM:SS]` style timestamps when evidence exists.
+3. Ask the chatbot something specific or click on any of the 5 quick prompts.
 
 ---
-
-## Why I built this
-
-Creators do not lose on “bad content” alone — they lose on **hooks, pacing, and retention mechanics** that are hard to see when you are staring at one video in isolation.
-
-I wanted a tool that feels like sitting with a sharp script doctor who has already read both transcripts, pulled the numbers, and will not invent quotes. So I built a small product-shaped demo: ingest two URLs, index what was actually said, run an initial hook audit, then let you interrogate the comparison in natural language — with retrieval limited to those two videos.
-
-This is not a thin wrapper around a chat API. Ingestion runs off the request thread, vectors are searchable before you type, and the UI streams long-running work instead of blocking on a spinner.
-
----
-
-## What you can do today
-
 | Step | What happens |
 |------|----------------|
 | **1. Paste two URLs** | YouTube, Instagram Reels, or TikTok |
 | **2. Background analysis** | Celery worker scrapes metadata + transcripts (parallel), chunks and embeds text, runs an initial hook audit |
 | **3. Dashboard** | Side-by-side cards: views, likes, engagement rate, embedded preview, ASR/caption source |
 | **4. RAG chat** | Ask about hooks, pacing, CTAs — model retrieves semantic chunks from both videos and cites timestamps |
-| **5. Resilience** | Redis-backed session memory, ingest cache, rate-limit aware retries, rule-based fallback if Gemini is throttled |
+| **5. Resilience** | Redis-backed session memory, rate-limit aware retries |
 
-The nav bar includes a live **backend health** indicator (API + Celery worker).
+Small detail: The nav bar includes a live **backend health** indicator (green if backend is online, red otherwise).
 
 ---
 
@@ -95,9 +80,8 @@ flowchart LR
 - **Event-driven ingest** — `POST /analyze` returns immediately; progress streams over SSE via Redis Pub/Sub, with events replayed from a Redis list if the client reconnects.
 - **LangGraph, not a single prompt** — Separate nodes for system context, hook audit, and conversational RAG; session state persisted in Redis (24h TTL).
 - **Tiered vector stack** — Pinecone when configured → local ChromaDB → in-memory keyword fallback so CI and local dev never hard-crash.
-- **Tiered embeddings** — Google `gemini-embedding-001` → OpenAI `text-embedding-3-small` → deterministic mock vectors when no API keys are set.
-- **Per-user isolation** — Session IDs hash `user_id + url_a + url_b` so two people comparing the same videos do not share chat history (frontend currently sends `anonymous`; ready for auth).
-- **Production-minded API** — CORS allowlist, SlowAPI rate limits, shared Redis connection pool for SSE, client disconnect does not kill the Celery job.
+- **Tiered embeddings** — Google (Free-tier) `gemini-embedding-001` → (no openai-key in the hosted site) OpenAI `text-embedding-3-small` & deterministic mock vectors when no API keys are set.
+- **Production-minded API** — CORS allowlist, SlowAPI rate limits, shared Redis connection pool for SSE.
 
 ---
 
@@ -105,12 +89,12 @@ flowchart LR
 
 | Layer | Technologies |
 |-------|----------------|
-| **Frontend** | Next.js 16, React 19, Tailwind CSS 4, Recharts, react-markdown, Playwright |
+| **Frontend** | Next.js 16, React 19, Tailwind CSS 4, Recharts, react-markdown |
 | **API** | FastAPI, SSE (sse-starlette), httpx |
 | **Jobs** | Celery 5, Redis (broker, cache, pub/sub, sessions) |
 | **AI** | LangGraph, LangChain, Google Gemini 2.5 Flash, `gemini-embedding-001` |
 | **Retrieval** | Pinecone (primary), ChromaDB (local fallback) |
-| **Ingestion** | yt-dlp, youtube-transcript-api, Apify actors (optional), Gemini/Whisper ASR paths |
+| **Ingestion** | yt-dlp, youtube-transcript-api, Apify actors (if yt-dlp fails), Gemini/Whisper ASR paths |
 | **Ops** | Docker Compose (Redis + API + worker + frontend) |
 
 ---
@@ -194,8 +178,6 @@ cd backend && python -m pytest
 cd frontend && npx playwright test
 ```
 
-Tests cover ingestion edge cases, vector store fallbacks, API contracts, cache behavior, and LangGraph agent helpers — so refactors do not silently break the RAG path.
-
 ---
 
 ## Project layout
@@ -231,23 +213,4 @@ Honest next steps if this moved from demo to product:
 
 ---
 
-## A note for recruiters & hiring managers
-
-If you only have five minutes:
-
-1. Skim the [architecture diagram](#architecture-how-it-fits-together) above.  
-2. Open the **[live demo](https://intelligent-chatbot-rag.up.railway.app/)** (or run `docker compose up --build`).  
-3. Glance at `backend/app/services/agent.py` for the LangGraph workflow and grounded citation rules.  
-4. Run `pytest` in `backend/` — the test suite is the quickest proof this was engineered, not vibe-coded.
-
-I am happy to walk through tradeoffs (SSE vs WebSockets, Pinecone vs Chroma, why Celery threads on this workload) in an interview.
-
----
-
-## License
-
-This repository is a technical portfolio project. Add a license file if you plan to open-source contributions.
-
----
-
-*Built with care for creators who want evidence-backed feedback — not generic AI platitudes.*
+The End.
