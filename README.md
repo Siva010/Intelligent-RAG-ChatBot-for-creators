@@ -122,7 +122,7 @@ PINECONE_INDEX_NAME=creatorjoy
 OPENAI_API_KEY=                         # Embedding + legacy paths
 APIFY_API_TOKEN=                        # Stronger scrape for some IG/TikTok cases
 
-# Production CORS (comma-separated)
+# Production CORS 
 # CORS_ORIGINS=https://your-frontend.vercel.app
 ```
 
