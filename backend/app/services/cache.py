@@ -12,24 +12,31 @@ class RedisCache:
         self.redis_url = redis_url
         self.client: Optional[redis.Redis] = None
         self.is_connected = False
-        self._ensure_connected()
+        # Lazy-connect: attempt at startup but never crash on import.
+        self._try_connect()
+
+    def _try_connect(self):
+        """Attempt a Redis connection. On any error, mark as disconnected and continue."""
+        try:
+            self.client = redis.Redis.from_url(
+                self.redis_url,
+                decode_responses=True,
+                **redis_ssl_connection_kwargs(self.redis_url),
+            )
+            self.client.ping()
+            self.is_connected = True
+            logger.info(f"Connected to Redis cache at {self.redis_url}")
+        except (redis.ConnectionError, redis.exceptions.ResponseError, Exception) as e:
+            logger.warning(
+                f"Redis cache unavailable at {self.redis_url}: {e}. "
+                "Cache disabled — falling back to no-op."
+            )
+            self.is_connected = False
+            self.client = None
 
     def _ensure_connected(self):
         if not self.is_connected:
-            try:
-                self.client = redis.Redis.from_url(
-                    self.redis_url,
-                    decode_responses=True,
-                    **redis_ssl_connection_kwargs(self.redis_url),
-                )
-                # Test connection
-                self.client.ping()
-                self.is_connected = True
-                logger.info(f"Connected to Redis cache at {self.redis_url}")
-            except redis.ConnectionError as e:
-                logger.warning(f"Failed to connect to Redis at {self.redis_url}: {e}. Falling back to a dummy cache.")
-                self.is_connected = False
-                self.client = None
+            self._try_connect()
 
     def get(self, url: str) -> Optional[Dict[str, Any]]:
         self._ensure_connected()

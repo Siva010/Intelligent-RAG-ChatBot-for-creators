@@ -89,13 +89,13 @@ _CONVERSATIONAL_QUERIES = frozenset(
 )
 
 
-def _is_chat_assistant_chain_end(event: dict) -> bool:
+def _is_chat_assistant_chain_end(event: Any) -> bool:
     """Only accept chain-end from the chat node (graph-level ends include full message history)."""
     name = event.get("name") or (event.get("metadata") or {}).get("langgraph_node") or ""
     return name == "chat_assistant" or str(name).startswith("chat_assistant")
 
 
-def _is_chat_assistant_stream(event: dict) -> bool:
+def _is_chat_assistant_stream(event: Any) -> bool:
     meta = event.get("metadata") or {}
     node = meta.get("langgraph_node") or ""
     if not node:
